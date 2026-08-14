@@ -105,6 +105,12 @@ The spec-reading pass surfaced fourteen inconsistencies or gaps. The high-impact
 `transformKeys` phrasing, agent-service `id` shape, versionId-vs-rpy state mixing, redirect
 language, and resolution-metadata contradictions.)
 
+15. (Added from the 2026-08-14 KERI panel, KRT-F3.) The `#### Thresholds` mapping cannot
+    represent KERI v1's multi-clause (conjunctive) `kt` grammar — `ConditionalProof2022` as
+    mapped is a single weighted sum, and the reference implementation silently truncates to
+    the first clause. Our implementation fails closed on such key states
+    (`e.feature.unsupported.threshold.f`); the representational gap belongs upstream.
+
 Upstream engagement note: trustoverip repos are in the no-AI-posting scope — issues get drafted
 as text for Daniel to post with his own hands.
 
