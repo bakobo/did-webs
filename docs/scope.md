@@ -178,5 +178,5 @@ fail with a clear error, never silently degrade).
 
 Out of scope: wallet/edge-agent features, remote issuance choreography (driving a customer's
 KERIA/Signify agent to issue the designated-aliases ACDC — customers bring their own tooling;
-see `this.i` decision `avuwzl`), ACDC credential exchange beyond the designated-aliases
-attestation, did:webvh interop.
+see `this.i` decision `avuwzl`, onboarding survey tracked at ~4spy), ACDC credential exchange
+beyond the designated-aliases attestation, did:webvh interop.
