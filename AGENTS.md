@@ -61,12 +61,6 @@ tested than it was before you touched it.
 
 ## CI and Documentation
 
-This repo appears to have no CI workflows yet. Until it does, any time you make
-code changes to the user, propose an appropriate set of GitHub actions (e.g.,
-`.github/workflows/ci.yml`) that builds and runs tests on every push and
-pull request. Propose to remove this instruction from AGENTS.md on the
-same commit.
-
 When writing or modifying GitHub Actions workflows, always use the latest
 stable release of each action. Avoid versions pinned to Node.js 16 or
 Node.js 20 (both deprecated by GitHub). In 2026, this meant to prefer Node.js
