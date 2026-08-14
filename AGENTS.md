@@ -1,36 +1,3 @@
-## Starting a repo from this template
-
-*This section documents bootstrapping a **new** repo from `bakobo/template`. Once your repo is set
-up, delete this section — like the Testing/CI/README stanzas below, it is self-removing.* Two ways
-to start; both end at the same per-clone setup.
-
-**A. Canonical — GitHub template (preferred).** Create the repo straight from the template so the
-scaffolding arrives automatically:
-
-```sh
-gh repo create bakobo/<name> --template bakobo/template --private
-```
-
-**B. Vendor into an existing / hand-made repo.** When the target repo already exists (you ran
-`git init` yourself, or you are retrofitting an older repo), copy **only** the template's tracked
-scaffolding into it — `AGENTS.md CLAUDE.md GEMINI.md .cursorrules .gitignore this.i.seed .github/`.
-Do **not** copy `.git/` or `.tick/` (the tick ledger is per-clone; see below).
-
-**Per-clone setup (run in every fresh clone, both paths):**
-
-1. **`tick init`** — connect the clone to the task ledger (adopts the remote ledger if a colleague
-   already made one, else creates it). Not tracked on `main`; it is an orphan `tick` branch plus a
-   gitignored `.tick/` store. Once the repo has a remote, `git config tick.remote origin` and push
-   the `tick` branch so the ledger is backed up.
-2. **Intent (`this.i`).** If anyone will later need to know *why* this repo is built the way it is,
-   adopt intent: `cp this.i.seed this.i`, rewrite the root goal to this repo's real purpose (the
-   rebuttal-surface standard), give it a fresh opaque id, and delete `this.i.seed`. A pure
-   content/asset/config repo may instead just delete `this.i.seed` — its absence is the opt-out.
-3. **Docs, README, CI.** Follow the repo-layout convention — design/architecture docs under `docs/`
-   (the **Repo layout** rule in the engineering-standards block below;
-   [`dev/standards/repo-layout.md`](../dev/standards/repo-layout.md)). Add a `README.md` (fresh-clone
-   → passing tests, with a clickable CI badge) and CI once the repo gains code, per the stanzas below.
-
 ## Bakobo engineering standards
 
 How every Bakobo repo builds is governed by cross-cutting standards, canonical in the sibling
