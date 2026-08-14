@@ -53,6 +53,33 @@ Production did:webs implementation on KERI = goal:
         is the demo-grade GLEIF resolver, which is an incomplete comparator (it omits
         spec-mandatory document properties).
 
+    Non-custodial: the product ingests controller-produced CESR streams = decision:
+      id: avuwzl
+      why: >
+        Bakobo does not hold customer keys, so the publish product's surface is host-side: accept
+        a CESR stream the controller produced (which must already contain the designated-aliases
+        ACDC only the controller's keys can issue), verify it, derive the documents, and host the
+        artifacts. Rejected a custodial keystore-to-artifacts pipeline as the product surface —
+        customers already operate their own agents, and custody would change Bakobo's risk
+        posture, not just its API. Issuance code still exists in the library, but scoped to
+        keystores we control (tests, demos). Accepted tradeoff: customer onboarding depends on
+        third-party wallet/agent tooling being able to issue the designated-aliases ACDC; we
+        inherit that ecosystem gap rather than papering over it with custody.
+
+    Interop outranks estate keripy coherence = decision:
+      id: gvimca
+      why: >
+        Where ecosystem interoperability and estate coherence conflict, interop wins — being
+        resolvable by the existing did:webs ecosystem (GLEIF resolver, universal-resolver driver,
+        both on keripy 1.2.13) is the product's purpose, while the estate's bakobo/keripy pin
+        (366d810, the 2.0.0-dev line, shared by witness and heti) is an internal convenience.
+        Discharge check: a spike feeds a bakobo/keripy-produced stream to the GLEIF resolver; if
+        it ingests cleanly we keep the estate pin, otherwise this repo pins keripy 1.2.13 and the
+        divergence is recorded as a deviation here. Rejected deciding by fiat without the spike
+        (the versions may interoperate fine; KERI wire compatibility is a goal of both lines).
+        Accepted tradeoff: possibly two keripy versions across bakobo repos, with the mismatch
+        documented rather than hidden.
+
     Resolver fails below TOAD, tolerates missing receipts above it = decision:
       id: wmoq5b
       why: >
