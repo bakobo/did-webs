@@ -65,6 +65,22 @@ Production did:webs implementation on KERI = goal:
         keystores we control (tests, demos). Accepted tradeoff: customer onboarding depends on
         third-party wallet/agent tooling being able to issue the designated-aliases ACDC; we
         inherit that ecosystem gap rather than papering over it with custody.
+      children:
+
+        Hosted artifacts are derived from verified state, never submitted bytes = constraint:
+          id: embuup
+          why: >
+            The KERI panel (reviews/keri-review-panel-phase1-design.md, SEC-F1/SPC-F1,
+            2026-08-14) showed keripy's Parser resumes past per-frame validation failures, so
+            "the stream verified" is never a property of submitted bytes — only of the state
+            keripy accepted. Passing submitted bytes through to the hosted keri.cesr would let
+            unverified frames (fork branches, rejected rpy records, third-party chaff) publish
+            under Bakobo's domain. Both hosted artifacts are therefore re-derived: did.json
+            from derived state, keri.cesr re-assembled by replay from the scratch database,
+            with a frame-accounting and escrow audit defining ingest success. Rejected
+            passthrough-after-verification as unsound at the parser layer. Accepted tradeoff:
+            hosted keri.cesr is a normalized equivalent, not a byte-identical copy, of the
+            controller's submission.
 
     Interop outranks estate keripy coherence = decision:
       id: gvimca
