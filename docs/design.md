@@ -101,7 +101,7 @@ bytes (constraint `embuup`).
   `DelegatorOOBI` for delegated AIDs), and `alsoKnownAs`: always `did:keri:<aid>`, plus
   ACDC-authorized entries **each of which must itself parse and carry the verified AID as its
   final component** — an entry claiming a different AID fails the publication with
-  `e.rule.alias.aid-mismatch.f` (KRT-F4; the spec constrains `alsoKnownAs` to same-AID DIDs,
+  `e.rule.alias.aid.mismatch.f` (KRT-F4; the spec constrains `alsoKnownAs` to same-AID DIDs,
   and we enforce what we could otherwise only assert). `to_did_web(doc)` produces the hosted
   form. Abandoned (deactivated) AIDs derive successfully and keep publishing.
 - `didwebs/assemble.py` — two roles, one emitter. Keystore-side (tests/demos/fixtures):
@@ -140,7 +140,20 @@ enforcement (`wmoq5b`) must land** — the artifact pipeline alone must never be
 unauthenticated submissions. Verification is fail-closed (org principle 8): everything served
 is derived, and nothing unverified escapes into artifacts.
 
-## Error codes (proposed; reconcile against the bakobo/errors core registry before minting)
+## Error codes (reconciled against the bakobo/errors catalog, 2026-08-14)
+
+Reconciliation record. No code below collides with a shipped code in the catalog
+(`bakobo/errors/index.json` at `45f42ae`). Three near-neighbors are distinct conditions, and the
+registry documents each boundary at the declaration: heti's `e.state.conflict.duplicity.f` is
+duplicity observed across gathered evidence, while our `e.state.conflict.kel.f` is one submission
+forking its own KEL; heti's `e.input.format.evidence.f` is its evidence bundle, ours is the CESR
+publication stream; heti's `e.feature.unsupported.alg.f` is a request-signature algorithm, ours a
+key-state key type. Two codes were renamed from rev 2's proposals by the standard's
+hyphen-vs-dot rule (`key.alg` — alg is a property of the key; `alias.aid.mismatch` —
+subject before predicate, as in `event.sig`); `alias-acdc` stays one hyphenated token because it
+names one artifact kind, like the standard's `trans-aid`. `e.self.unknown.f` is minted here first
+(catalog has no instance) with exactly the standard's meaning. The `ErrorCode` machinery comes
+from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous resolution in CI).
 
 | Code | Condition |
 |---|---|
@@ -154,8 +167,8 @@ is derived, and nothing unverified escapes into artifacts.
 | `e.state.revoked.alias-acdc.f` | designated-aliases ACDC revoked per direct `Tever.vcState` query |
 | `e.grant.missing.alias.f` | ACDC present but not the claimed AID's authorization (wrong issuer, or registry not anchored in the claimed AID's KEL) |
 | `e.grant.scope.alias.f` | controller's own ACDC does not cover the claimed DID (or its did:web form) under normalized equality |
-| `e.rule.alias.aid-mismatch.f` | an `a.ids` entry names a different AID than the stream verifies (spec same-AID constraint) |
-| `e.feature.unsupported.key-alg.f` | non-Ed25519 key in current key state (decision `3woefn`) |
+| `e.rule.alias.aid.mismatch.f` | an `a.ids` entry names a different AID than the stream verifies (spec same-AID constraint) |
+| `e.feature.unsupported.key.alg.f` | non-Ed25519 key in current key state (decision `3woefn`) |
 | `e.feature.unsupported.threshold.f` | multi-clause (conjunctive) `kt` — unrepresentable in `ConditionalProof2022` |
 | `e.self.unknown.f` | unattributable internal failure |
 
@@ -201,9 +214,9 @@ of new code. Oracles, strongest first:
    - third-party-AID frames in the stream rejected
    - CBOR v1 frame rejected (`e.feature.unsupported.serialization.f`) (SKP-F5)
    - v2/unversioned frame rejected (`e.input.format.stream.f`)
-   - secp256k1 key state rejected (`e.feature.unsupported.key-alg.f`)
+   - secp256k1 key state rejected (`e.feature.unsupported.key.alg.f`)
    - multi-clause `kt` rejected (`e.feature.unsupported.threshold.f`), never truncated (KRT-F3)
-   - `a.ids` entry with a different AID rejected (`e.rule.alias.aid-mismatch.f`) (KRT-F4)
+   - `a.ids` entry with a different AID rejected (`e.rule.alias.aid.mismatch.f`) (KRT-F4)
    - delegated AID without delegator KEL rejected (`e.input.missing.delegator.f`)
    - truncated stream (KEL prefix only, no TEL) rejected
    - deactivated (rotated-to-null) AID **publishes successfully**, while a code-B AID is
@@ -239,7 +252,7 @@ SEC-F2/KRT-F2/SKP-F2 → escrow audit, error attribution map, fork + tamper orac
 KRT-F1 → issuer-binding post-condition, `e.grant.missing.alias.f`, attacker-ACDC oracle.
 KRT-F3 → fail-closed threshold branch, oracle exclusion, upstream issue (scope soft spot 15).
 SEC-F4 → direct `Tever.vcState` mechanism named. KRT-F4 → same-AID enforcement +
-`e.rule.alias.aid-mismatch.f`. KRT-F5 → normalized equality + canonical emission + acceptance
+`e.rule.alias.aid.mismatch.f`. KRT-F5 → normalized equality + canonical emission + acceptance
 oracle. SPC-F4 → RFC-based host validation. KRT-F6 → two named predicates + conflation oracle.
 SKP-F3 → `generate` verb dropped from the CLI. SKP-F4 → wording + standing revisit condition.
 SKP-F5 → JSON-only stated as such, `e.feature.unsupported.serialization.f`. SEC-F3 was refuted
