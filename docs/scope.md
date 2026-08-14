@@ -146,12 +146,17 @@ new code, error codes per `dev/standards/error-codes.md` (`e.did.*` family to be
 
 In scope, phased:
 
-1. **Generation library + CLI** — from a keripy keystore (or an imported CESR stream): compose
-   the DID, issue/manage the designated-aliases ACDC (authorizing both did:webs and did:web
-   forms), assemble `keri.cesr` in re-ingestable order, derive the complete DID document
-   (`@context`, both verification relationships, JWK + CesrKey encodings, thresholds, services,
-   delegation), emit the did:web form for hosting. Deactivation and update flows regenerate in
-   place.
+1. **Generation library + CLI** (package and CLI name: `didwebs`) — the product surface is
+   host-side and non-custodial (`this.i` decision `avuwzl`): accept a controller-produced CESR
+   stream that already contains the designated-aliases ACDC, verify it, derive the complete DID
+   document (`@context`, both verification relationships, JWK + CesrKey encodings, thresholds,
+   services, delegation), and emit the did:web-form `did.json` plus normalized `keri.cesr` for
+   hosting. The library's keystore-side half — compose the DID, issue the designated-aliases
+   ACDC (authorizing both did:webs and did:web forms), assemble `keri.cesr` in re-ingestable
+   order — is scoped to keystores we control (tests, demos). Deactivation and update flows
+   regenerate in place. keripy lineage decided by spike (`this.i` decision `gvimca`): estate
+   `bakobo/keripy` pin if the GLEIF resolver ingests its streams, else keripy 1.2.13 recorded
+   as a deviation.
 2. **Resolver library + service** (fast follow to phase 1) — full `#### Read (Resolve)`
    algorithm with the derived-vs-served equality gate; scratch (per-resolution) keripy state,
    never a shared long-lived DB; witness-receipt enforcement keyed to TOAD — fail when receipts
@@ -171,5 +176,7 @@ resolution, web-redirect/relocation handling, KRAM/BADA-RUN for non-KEL-backed e
 secp256k1/secp256r1 (Ed25519-only in v1 — `this.i` decision `3woefn`; unsupported key types
 fail with a clear error, never silently degrade).
 
-Out of scope: wallet/edge-agent features, ACDC credential exchange beyond the designated-aliases
+Out of scope: wallet/edge-agent features, remote issuance choreography (driving a customer's
+KERIA/Signify agent to issue the designated-aliases ACDC — customers bring their own tooling;
+see `this.i` decision `avuwzl`), ACDC credential exchange beyond the designated-aliases
 attestation, did:webvh interop.
