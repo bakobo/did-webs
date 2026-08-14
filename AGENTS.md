@@ -71,12 +71,6 @@ code changes to the user, propose an appropriate set of GitHub actions (e.g.,
 pull request. Propose to remove this instruction from AGENTS.md on the
 same commit.
 
-This repository has no README. As long is this is the case, any time you
-make code changes for the user, propose to add a `README.md` that explains how
-to get from a fresh clone to passing tests, with a clickable CI status
-badge at the top for each active workflow. Propose to remove this
-instruction from AGENTS.md on the same commit.
-
 When writing or modifying GitHub Actions workflows, always use the latest
 stable release of each action. Avoid versions pinned to Node.js 16 or
 Node.js 20 (both deprecated by GitHub). In 2026, this meant to prefer Node.js

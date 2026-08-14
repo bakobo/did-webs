@@ -6,3 +6,11 @@
 # See dev/standards/repo-layout.md, "Rendered doc artifacts".
 docs/**/*.pdf
 docs/**/*.html
+
+# Python build / test artifacts
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*

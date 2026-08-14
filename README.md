@@ -1,0 +1,36 @@
+[![CI](https://github.com/bakobo/did-webs/actions/workflows/ci.yml/badge.svg)](https://github.com/bakobo/did-webs/actions/workflows/ci.yml)
+
+# did-webs
+
+Publish [`did:webs`](https://github.com/trustoverip/kswg-did-method-webs-specification) DIDs
+for KERI-controlled AIDs on Bakobo infrastructure. A controller-produced CESR publication stream
+and the DID it claims to back go in; verified artifacts — `did.json` and `keri.cesr` — come out,
+derived from what [keripy](https://github.com/WebOfTrust/keripy) actually accepted, never from
+the submitted bytes.
+
+Phase 1 is publish-only, host-side, with no network I/O. The design and its rationale live in
+`this.i` (the intent tree, the source of truth) and `docs/`.
+
+## Requirements
+
+- Python ≥ 3.14
+- [`uv`](https://docs.astral.sh/uv/)
+
+## From a fresh clone to passing tests
+
+```sh
+uv sync
+uv run pytest
+```
+
+`uv sync` installs the pinned `keri` and `bakobo-errors` packages; `uv run pytest` runs the
+suite under a **100% branch-coverage gate** (`--cov-fail-under=100`).
+
+## Command line
+
+```sh
+uv run didwebs
+```
+
+The `didwebs` publish command is not yet implemented — this phase ships the error registry and
+CI scaffolding a later brief builds on.

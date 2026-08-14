@@ -1,0 +1,47 @@
+[project]
+name = "didwebs"
+version = "0.0.0"
+description = "Publish did:webs DIDs for KERI-controlled AIDs — verified artifacts from a CESR stream, never passthrough."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Bakobo" }]
+dependencies = [
+    # The estate pin (this.i decisions gvimca/qbqfst) — witness pins the same keri commit, and
+    # they must never diverge or `keri` cannot resolve. Public repo, plain HTTPS: anonymous
+    # resolution needs no credential, in a fresh clone or in CI.
+    "keri @ git+https://github.com/bakobo/keripy@366d81071aea7be5b8ad35acbed815e1255224d5",
+    # The shared ErrorCode/BakoboError machinery didwebs/errors.py is built on. Public repo,
+    # plain HTTPS for the same reason as keri above.
+    "bakobo-errors @ git+https://github.com/bakobo/errors@45f42ae4259cce144fe1d668c9c176d869c3023a",
+]
+
+[project.scripts]
+didwebs = "didwebs.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# didwebs pins keri and bakobo-errors to git commits; hatchling needs this to allow the direct
+# references.
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/didwebs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=didwebs --cov-branch --cov-report=term-missing --cov-fail-under=100"
+
+[tool.coverage.run]
+branch = true
+source = ["didwebs"]
