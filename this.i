@@ -78,7 +78,25 @@ Production did:webs implementation on KERI = goal:
         divergence is recorded as a deviation here. Rejected deciding by fiat without the spike
         (the versions may interoperate fine; KERI wire compatibility is a goal of both lines).
         Accepted tradeoff: possibly two keripy versions across bakobo repos, with the mismatch
-        documented rather than hidden.
+        documented rather than hidden. RESOLVED 2026-08-14: the spike passed — estate pin kept;
+        see the constraint below.
+      children:
+
+        Protocol v1 pinned at every event-constructing call = constraint:
+          id: qbqfst
+          why: >
+            The spike (.ignored/spike-keripy-interop/REPORT.md, 2026-08-14) showed bakobo/keripy
+            2.0.0-dev6 emits protocol-v2 events by default and per call site — makeHab,
+            interact, and replay each default to v2 independently of the kever's version —
+            while the deployed did:webs ecosystem (keripy 1.2.13 parsers) silently drops v2
+            frames; v2 TEL events cannot even be serialized (no vcp ilk in the v2 table). With
+            Vrsn_1_0 pinned everywhere, generated streams are byte-structure-identical to a
+            1.2.13 control and ingest cleanly. So: every event-constructing and replay call
+            passes the v1 version explicitly, and a regression test asserts generated streams
+            carry only KERI10JSON/ACDC10JSON version strings. Rejected a global pin because
+            keripy offers no such choke point — the default is per-call by API design. Accepted
+            tradeoff: an easy-to-forget parameter on every call, mitigated by the
+            version-string oracle.
 
     Resolver fails below TOAD, tolerates missing receipts above it = decision:
       id: wmoq5b
