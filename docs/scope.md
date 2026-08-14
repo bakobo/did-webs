@@ -1,7 +1,8 @@
 # did:webs implementation scope
 
-Status: proposed (2026-08-14). Decisions ratified here move to `this.i`; this document is the
-analysis behind them.
+Status: ratified (2026-08-14). The scope decisions live in `this.i` (`3woefn` Ed25519-only v1,
+`ecwpad` publish-first, `wmoq5b` TOAD-based receipt enforcement); this document is the analysis
+behind them.
 
 This repo implements the did:webs DID method so a Bakobo customer holding a KERI AID can
 participate in W3C DID ecosystems (see `this.i`, goal `xckiyf`). This document records what the
@@ -151,11 +152,13 @@ In scope, phased:
    (`@context`, both verification relationships, JWK + CesrKey encodings, thresholds, services,
    delegation), emit the did:web form for hosting. Deactivation and update flows regenerate in
    place.
-2. **Resolver library + service** — full `#### Read (Resolve)` algorithm with the derived-vs-
-   served equality gate; scratch (per-resolution) keripy state, never a shared long-lived DB;
-   witness-receipt threshold enforcement and optional watcher consultation as our
-   above-reference hardening; clean `didResolutionMetadata` errors per the spec's failure
-   contract; `versionId` support; universal-resolver driver container.
+2. **Resolver library + service** (fast follow to phase 1) — full `#### Read (Resolve)`
+   algorithm with the derived-vs-served equality gate; scratch (per-resolution) keripy state,
+   never a shared long-lived DB; witness-receipt enforcement keyed to TOAD — fail when receipts
+   on establishment events fall below the controller's declared threshold of accountable
+   duplicity, tolerate receipts missing beyond it (`this.i` decision `wmoq5b`) — plus optional
+   watcher consultation as above-reference hardening; clean `didResolutionMetadata` errors per
+   the spec's failure contract; `versionId` support; universal-resolver driver container.
 3. **Serving** — integration with Bakobo hosting so customer AIDs get published artifacts
    (static publication first; the dynamic per-request pattern from the reference is optional
    later). Fits alongside `bakobo/witness` operationally.
@@ -165,16 +168,8 @@ In scope, phased:
 
 Deferred until demanded: `transformKeys` re-encodings beyond JsonWebKey/CesrKey, did:keri
 resolution, web-redirect/relocation handling, KRAM/BADA-RUN for non-KEL-backed extras,
-secp256k1/secp256r1 (start Ed25519-only if customer AIDs are Ed25519 — confirm before design).
+secp256k1/secp256r1 (Ed25519-only in v1 — `this.i` decision `3woefn`; unsupported key types
+fail with a clear error, never silently degrade).
 
 Out of scope: wallet/edge-agent features, ACDC credential exchange beyond the designated-aliases
 attestation, did:webvh interop.
-
-## Open questions
-
-1. Ed25519-only at first, or all three curves from the start?
-2. Does the first customer-facing deliverable prioritize the publish side (customers get
-   resolvable DIDs) or the resolve side (Bakobo can verify others' DIDs)? Phasing above assumes
-   publish-first.
-3. Witness-receipt enforcement policy in the resolver (hard-fail vs. metadata warning) — spec
-   only SHOULDs it; our default posture (fail closed) suggests hard-fail with a config escape.
