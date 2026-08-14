@@ -30,3 +30,37 @@ Production did:webs implementation on KERI = goal:
         a KEL. Accepted tradeoff: TypeScript-native ecosystems (browser wallets) cannot embed our
         library; they consume it as a service (resolver endpoint / universal-resolver driver)
         instead.
+
+    Ed25519 only in v1 = decision:
+      id: 3woefn
+      why: >
+        Support only Ed25519 verification keys at first, though the spec also defines secp256k1
+        and secp256r1 transformations. Ed25519 is what KERI deployments (and Bakobo customer
+        AIDs) actually use, and each extra curve adds JWK-conversion surface that must be tested
+        against a spec still in normative cleanup. Rejected implementing all three up front as
+        speculative coverage. Accepted tradeoff: a DID whose key state contains a secp key fails
+        with a clear unsupported-key error until the follow-on, rather than degrading silently.
+
+    Publish-first, resolve as fast follow = decision:
+      id: ecwpad
+      why: >
+        The first deliverable is the publish side — artifact generation so customers' AIDs
+        become resolvable did:webs DIDs — with our own resolver as a fast follow. Customer value
+        is appearing in DID ecosystems; third parties resolve with existing tools (universal
+        resolver, GLEIF demo resolver), so publishing alone is already useful. Rejected
+        resolve-first (verifies others' DIDs but ships nothing customer-visible). Accepted
+        tradeoff: until our resolver lands, our only end-to-end oracle for published artifacts
+        is the demo-grade GLEIF resolver, which is an incomplete comparator (it omits
+        spec-mandatory document properties).
+
+    Resolver fails below TOAD, tolerates missing receipts above it = decision:
+      id: wmoq5b
+      why: >
+        The resolver hard-fails a stream whose witness receipts on establishment events fall
+        below the controller's declared TOAD (threshold of accountable duplicity), and does NOT
+        fail on receipts missing beyond that threshold. TOAD is KERI's own sufficiency bar —
+        the controller's published statement of how many receipts make key state accountable —
+        so demanding every listed witness's receipt would reject streams KERI itself deems
+        accountable, while warn-only below TOAD would fail open (org principle 8). Accepted
+        tradeoff: a resolver cannot distinguish "witness slow to receipt" from "receipt
+        withheld"; below TOAD we refuse rather than guess.
