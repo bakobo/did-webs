@@ -20,8 +20,8 @@ import keri_api
 import pytest
 from bakobo.errors import BakoboError
 
+from didwebs import assemble, ingest
 from didwebs import did as did_module
-from didwebs import ingest
 
 # --------------------------------------------------------------------------------- helpers
 
@@ -668,3 +668,304 @@ def test_a_message_class_this_build_does_not_recognize_is_never_accounted(tmp_pa
 
     with loaded(stream) as scratch:
         assert not ingest.accepted(scratch, exotic)
+
+
+# ------------------------------------------- unit 3: the authorization post-conditions
+
+
+def designation_stream(tmp_path, ids, *, name="custom"):
+    """A complete, valid publication stream whose designated-aliases ACDC lists exactly ``ids``.
+
+    ``builders`` has no knob for "covers the did:webs form but not the did:web form", and the
+    knobs are not this brief's to extend, so the one stream that oracle needs is assembled here
+    from the same keystore-side helpers the toolkit itself uses.
+    """
+    with keri_api.scratch(name, tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        issued = assemble.issue_aliases(
+            hab, regery, ids(hab.pre), nonce=keri_api.REGISTRY_NONCE
+        )
+        return (
+            keri_api.publication_stream(hab, regery, issued.creder),
+            did_module.parse(keri_api.did_webs(hab.pre)),
+        )
+
+
+def test_a_stream_with_no_designated_aliases_acdc_is_rejected(tmp_path):
+    """Absence is established, not assumed: the whole stream was walked, and the anchors in the
+    KEL still promise a credential the submission does not carry."""
+    stream, facts = fixture("without_acdc", tmp_path)
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+
+    assert caught.value.code == "e.input.missing.alias-acdc.f"
+
+
+def test_a_truncated_stream_is_rejected_for_the_credential_it_no_longer_carries(tmp_path):
+    """``truncated`` earns ``e.input.missing.alias-acdc.f``, not a proof or format code.
+
+    The knob keeps the inception event and drops everything after it. That one frame is
+    well-formed, so the walk succeeds; it is accepted by keripy, so accounting is clean; and no
+    escrow holds anything, so the escrow audit is silent. The first post-condition with anything
+    to say is the authorization step, which finds no designated-aliases ACDC in a stream it
+    walked in full — which is exactly what the code means.
+    """
+    stream, facts = fixture("truncated", tmp_path)
+    walked = ingest.walk(stream)
+
+    assert walked.failure is None
+    with loaded(stream) as scratch:
+        assert ingest.account_frames(scratch, walked) == ()
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+
+    assert caught.value.code == "e.input.missing.alias-acdc.f"
+
+
+def test_an_attacker_issued_alias_acdc_does_not_authorize_the_victims_did(tmp_path):
+    """KRT-F1. The attacker's credential is impeccable on its own terms — correctly signed,
+    against the pinned schema, anchored in the attacker's own KEL — and designates somebody
+    else's DID. The issuer-binding post-condition is the only thing standing between it and a
+    Bakobo-hosted publication of the victim's AID at a host the victim never authorized."""
+    stream, facts = fixture("attacker_acdc", tmp_path)
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+
+    assert caught.value.code == "e.grant.missing.alias.f"
+    assert facts["issuer_aid"] == facts["attacker_aid"]
+
+
+def test_a_registry_anchored_in_another_aids_kel_does_not_authorize(tmp_path):
+    """The second leg of the issuer binding: an ACDC riding a different KEL's registry is treated
+    as absent, whoever the ``ii`` field names."""
+    stream, facts = fixture("base", tmp_path)
+    stranger = did_module.parse(keri_api.did_webs("E" + "A" * 43))
+
+    with loaded(stream) as scratch:
+        assert ingest.anchored_in(scratch, claimed(facts), facts["regk"])
+        assert not ingest.anchored_in(scratch, stranger, facts["regk"])
+
+
+def test_a_revoked_designated_aliases_acdc_is_rejected(tmp_path):
+    """SEC-F4. keripy's credential Verifier saves revoked credentials by design and says so in a
+    comment, so revocation is read from the TEL directly, never inferred from the save."""
+    stream, facts = fixture("revoked_acdc", tmp_path)
+
+    with loaded(stream) as scratch:
+        assert scratch.regery.reger.saved.get(keys=(facts["acdc_said"],)) is not None
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+
+    assert caught.value.code == "e.state.revoked.alias-acdc.f"
+
+
+def test_a_designation_of_another_domain_does_not_cover_the_claimed_did(tmp_path):
+    stream, facts = fixture("scope_miss", tmp_path)
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+
+    assert caught.value.code == "e.grant.scope.alias.f"
+
+
+def test_a_designation_of_the_did_webs_form_alone_does_not_cover_the_did_web_form(tmp_path):
+    """Resolution step 4 read conservatively: both spellings of the identifier must be
+    designated, or the hosted did:web artifact rests on an authorization nobody gave."""
+    stream, did = designation_stream(
+        tmp_path, lambda aid: [keri_api.did_webs(aid)], name="websonly"
+    )
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, did)
+
+    assert caught.value.code == "e.grant.scope.alias.f"
+
+
+def test_an_acdc_against_another_schema_is_not_a_designated_aliases_credential(tmp_path):
+    """The schema is pinned and its SAID recomputed from the bundled resource at every load, so
+    a credential of some other kind cannot stand in for the designation."""
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    doctored = ingest.Walk(
+        tuple(f.replace(schema="E" + "B" * 43) if f.is_acdc else f for f in walked.frames), None
+    )
+
+    with loaded(stream) as scratch, pytest.raises(BakoboError) as caught:
+        ingest.authorize(scratch, claimed(facts), doctored)
+
+    assert caught.value.code == "e.input.missing.alias-acdc.f"
+
+
+# ------------------------------------------------------------------ unit 3: the positives
+
+
+def test_a_valid_publication_stream_verifies(tmp_path):
+    stream, facts = fixture("base", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert verified.aid == facts["aid"]
+        assert verified.did == claimed(facts)
+        assert verified.acdc.said == facts["acdc_said"]
+        assert verified.acdc.regid == facts["regk"]
+        assert [frame.ilk for frame in verified.frames] == ["icp", "ixn", "ixn", "vcp", "iss", None]
+        assert verified.hby.kevers[facts["aid"]].sner.num == facts["kel_sn"]
+        assert verified.regery.reger.tevers[facts["regk"]].pre == facts["aid"]
+
+
+def test_spelling_variants_of_the_same_did_are_accepted(tmp_path):
+    """KRT-F5's false-rejection direction. Percent-encoding is case-insensitive and host names
+    are too, so a designation that matches no entry byte-for-byte still covers the claimed DID."""
+    stream, facts = fixture("spelling_variants", tmp_path)
+    did = did_module.parse(facts["did_webs"])
+
+    assert did.raw not in facts["ids"]  # not one entry is a byte-for-byte match
+    with ingest.ingest(stream, did) as verified:
+        assert verified.aid == facts["aid"]
+
+
+def test_a_delegated_publication_with_its_delegator_verifies(tmp_path):
+    stream, facts = fixture("delegated", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert verified.aid == facts["aid"]
+        assert facts["delegator_aid"] in verified.hby.kevers
+
+
+def test_a_deactivated_aid_is_accepted_by_ingest(tmp_path):
+    """KRT-F6. Abandonment is a key state, not a stream defect: an AID rotated to null next keys
+    has a perfectly valid publication, and whether the document says so is document.py's
+    concern. Conflating the two would stop a controller publishing their own deactivation."""
+    stream, facts = fixture("deactivated", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert verified.hby.kevers[facts["aid"]].sner.num == facts["kel_sn"]
+        assert verified.hby.kevers[facts["aid"]].ndigers == []
+
+
+def test_an_alias_naming_a_foreign_aid_still_ingests(tmp_path):
+    """The same-AID rule on ``alsoKnownAs`` entries (KRT-F4) is document.py's to enforce; the
+    designation still covers the claimed DID, so the stream itself is sound."""
+    stream, facts = fixture("alias_foreign_aid", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert facts["foreign_alias"] in verified.acdc.attrib["ids"]
+
+
+# ---------------------------------------------------------- unit 3: Verified and its lifetime
+
+
+def test_verified_does_not_carry_the_submitted_bytes(tmp_path):
+    """Constraint embuup: nothing downstream may reach around the audit to raw input, so the
+    hosted artifact cannot be a passthrough of what was submitted (SEC-F1)."""
+    stream, facts = fixture("base", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        held = [getattr(verified, field) for field in verified.__dataclass_fields__]
+
+        assert not any(isinstance(value, (bytes, bytearray)) for value in held)
+        for frame in verified.frames:
+            assert not any(
+                isinstance(value, (bytes, bytearray))
+                for value in (frame.said, frame.ilk, frame.principal)
+            )
+
+
+def test_verified_cleanup_leaves_no_temporary_directory(tmp_path):
+    stream, facts = fixture("base", tmp_path)
+    before = temp_stores()
+
+    verified = ingest.ingest(stream, claimed(facts))
+    assert temp_stores() > before
+    verified.close()
+
+    assert temp_stores() == before
+    assert verified.close() is None
+
+
+def test_a_rejected_stream_closes_its_scratch_state_on_the_way_out(tmp_path):
+    """A failed ingestion must not leak the database it built to discover the failure."""
+    stream, facts = fixture("revoked_acdc", tmp_path)
+    before = temp_stores()
+
+    with pytest.raises(BakoboError):
+        ingest.ingest(stream, claimed(facts))
+
+    assert temp_stores() == before
+
+
+def test_two_sequential_ingestions_share_no_state(tmp_path):
+    """Verified state never persists beyond a Verified's lifetime, and no two ingestions share
+    LMDB state — so a submission can neither read nor poison what an earlier one established."""
+    first_stream, first_facts = fixture("base", tmp_path / "first")
+    second_stream, second_facts = fixture("delegated", tmp_path / "second")
+
+    with ingest.ingest(first_stream, claimed(first_facts)) as first:
+        first_aid = first.aid
+    with ingest.ingest(second_stream, claimed(second_facts)) as second:
+        assert first_aid not in second.hby.kevers
+        assert first_facts["regk"] not in second.regery.reger.tevers
+
+
+# ---------------------------------------------------------------- the accounting invariant
+
+
+@pytest.mark.parametrize(
+    "knob",
+    [
+        "without_acdc",
+        "revoked_acdc",
+        "attacker_acdc",
+        "scope_miss",
+        "forked_kel",
+        "dropped_frame_candidate",
+        "third_party",
+        "cbor_frame",
+        "v2_frame",
+        "delegated:no-delegator",
+        "truncated",
+    ],
+)
+def test_every_rejection_names_a_final_didwebs_code(knob, tmp_path):
+    """TST's invariant, as one property over the whole negative matrix: a stream this pipeline
+    will not publish is refused with an attributed code, never with a bare exception and never
+    by publishing what survived."""
+    stream, facts = fixture(knob, tmp_path)
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+
+    assert caught.value.code.startswith("e.")
+    assert caught.value.code.endswith(".f")
+
+
+@pytest.mark.parametrize("knob", ["base", "spelling_variants", "delegated", "deactivated"])
+def test_every_accepted_stream_has_every_frame_accounted(knob, tmp_path):
+    """The other half of the same invariant: acceptance means *all* of it was accepted."""
+    stream, facts = fixture(knob, tmp_path)
+    did = did_module.parse(facts["did_webs"])
+
+    with ingest.ingest(stream, did) as verified:
+        assert len(verified.frames) == len(ingest.walk(stream).frames)
+
+
+def test_designations_this_method_cannot_read_are_ignored_rather_than_fatal(tmp_path):
+    """An ``a.ids`` entry naming another DID method, or a malformed did:webs, designates nothing
+    here. It is not an error — the controller may legitimately designate identifiers this method
+    knows nothing about — it simply cannot cover the claimed DID, and the entries that do still
+    do. (The same-AID constraint on such entries is document.py's, KRT-F4.)"""
+    stream, did = designation_stream(
+        tmp_path,
+        lambda aid: [
+            *keri_api.designated_ids(aid),
+            "did:keri:" + aid,
+            "did:webs:not a host:" + aid,
+        ],
+        name="mixed",
+    )
+
+    with ingest.ingest(stream, did) as verified:
+        assert "did:keri:" + verified.aid in verified.acdc.attrib["ids"]

@@ -35,6 +35,7 @@ import tempfile
 from dataclasses import dataclass, field, replace
 from typing import Self
 
+from bakobo.errors import BakoboError
 from keri.app import habbing
 from keri.core import eventing as keventing
 from keri.core import routing, serdering
@@ -46,7 +47,12 @@ from keri.vdr import eventing as teventing
 
 from didwebs import errors, schemaing
 
+# Imported under a distinct name so the constraint-qbqfst grep for parser call sites in
+# this module turns up CESR stream parsing only, never DID-string parsing.
+from didwebs.did import parse as parse_did
+
 __all__ = [
+    "AccountedFrame",
     "Frame",
     "Scratch",
     "Walk",
@@ -57,6 +63,7 @@ __all__ = [
     "audit",
     "delegators",
     "duplicitous",
+    "ingest",
     "open_scratch",
     "require_delegator",
     "require_no_third_party",
@@ -102,6 +109,7 @@ class Frame:
     principal: str
     sn: int | None
     regid: str | None
+    schema: str | None = None
     serder: object = None
     sigers: tuple = ()
 
@@ -166,6 +174,7 @@ def _frame(serder, sigers) -> Frame:
             principal=serder.israid,
             sn=None,
             regid=serder.regid,
+            schema=serder.schema,
             serder=serder,
             sigers=tuple(sigers),
         )
@@ -609,3 +618,196 @@ def audit(scratch: Scratch, did, walked: Walk) -> None:
         raise errors.KEL_FORKED(aid=did.aid)
     for frame in account_frames(scratch, walked):
         raise attribute(scratch, frame)
+
+
+# ------------------------------------------------- the authorization post-conditions
+
+
+#: TEL states that mean a credential no longer authorizes anything.
+REVOKED_ILKS = frozenset({"rev", "brv"})
+
+_DID_WEBS = "did:webs:"
+_DID_WEB = "did:web:"
+
+
+def anchored_in(scratch: Scratch, did, regid: str) -> bool:
+    """Whether ``regid``'s registry is the claimed AID's, anchored in the claimed AID's own KEL.
+
+    Two legs, and both are needed. The registry inception names its issuer in ``ii``, which
+    keripy keeps as ``Tever.pre``; and the seal that commits the inception must sit in a *first
+    seen* event of the claimed AID's key event log. An ACDC riding a different KEL's registry
+    fails one or the other, and is treated as absent (KRT-F1).
+    """
+    tever = scratch.regery.reger.tevers.get(regid)
+    if tever is None or tever.pre != did.aid:
+        return False
+    inception = scratch.regery.reger.tels.get(keys=regid, on=0)
+    _, anchor = scratch.regery.reger.ancs.get(keys=(regid, inception))
+    return scratch.hby.db.fons.get(keys=(did.aid, anchor.qb64)) is not None
+
+
+def _designated(entry: str):
+    """An ``a.ids`` entry as ``(method, WebsDid)``, or None when it designates something else.
+
+    Membership is decided over the normalized parse, never over raw strings: percent-encoding is
+    case-insensitive and host names are too, so a designation can cover a DID without matching it
+    byte for byte, and comparing strings would reject an authorization the controller did give
+    (KRT-F5). An entry that is not a did:web(s) identifier, or does not parse as one, designates
+    nothing here — it is not an error, it simply cannot cover the claimed DID.
+    """
+    for method in (_DID_WEBS, _DID_WEB):
+        if entry.startswith(method):
+            try:
+                return method, parse_did(_DID_WEBS + entry[len(method) :])
+            except BakoboError:
+                return None
+    return None
+
+
+def _covers(did, creder) -> bool:
+    """Whether the credential designates both spellings of the claimed identifier.
+
+    Resolution step 4, read conservatively: the did:web form is a separate identifier that a
+    separate hosted artifact rests on, so a designation of one form does not authorize the other.
+    ``a.ids`` is indexed directly because the pinned schema makes the attribute block and its
+    ``ids`` array mandatory, and keripy validates the credential against that schema before
+    saving it.
+    """
+    designated = {
+        parsed
+        for parsed in (_designated(entry) for entry in creder.attrib["ids"])
+        if parsed is not None
+    }
+    return (_DID_WEBS, did) in designated and (_DID_WEB, did) in designated
+
+
+def authorize(scratch: Scratch, did, walked: Walk):
+    """The designated-aliases credential that authorizes this publication (design §Modules 3).
+
+    Evaluated only on an otherwise fully accepted stream, in the design's order — absent, then
+    not the claimed AID's, then revoked, then out of scope — and the first failure raises; v1
+    aggregates nothing.
+
+    The credential returned is the one keripy **saved**, read back out of the scratch database,
+    not the one the submitted bytes carried. Everything downstream derives from accepted state
+    (constraint ``embuup``).
+    """
+    schema = schemaing.load_designated_aliases_schema().said  # SAID recomputed at every load
+    candidates = [frame for frame in walked.frames if frame.is_acdc and frame.schema == schema]
+    if not candidates:
+        raise errors.ALIAS_ACDC_MISSING(did=did.compose())
+
+    granted = [
+        frame
+        for frame in candidates
+        if frame.principal == did.aid and anchored_in(scratch, did, frame.regid)
+    ]
+    if not granted:
+        raise errors.ALIAS_GRANT_MISSING(did=did.compose())
+
+    frame = granted[0]
+    # Never inferred from the Verifier having saved it: keripy saves revoked credentials by
+    # design and says so in a comment (verifying.py, processCredential). SEC-F4.
+    state = scratch.regery.reger.tevers[frame.regid].vcState(vci=frame.said)
+    if state is None or state.et in REVOKED_ILKS:
+        raise errors.ALIAS_ACDC_REVOKED(said=frame.said)
+
+    creder = scratch.regery.reger.creds.get(keys=(frame.said,))
+    if not _covers(did, creder):
+        raise errors.ALIAS_GRANT_SCOPE(did=did.compose())
+    return creder
+
+
+# ------------------------------------------------------------------------ verified state
+
+
+@dataclass(frozen=True)
+class AccountedFrame:
+    """One frame of the submission, accounted accepted. Identifiers only — no submitted bytes."""
+
+    said: str
+    ilk: str | None
+    principal: str
+
+
+@dataclass(frozen=True)
+class Verified:
+    """A publication stream that passed the whole audit, and the accepted state it produced.
+
+    **Lifetime.** ``Verified`` owns live keripy handles on temporary databases, so it must be
+    closed: use it as a context manager, or call :meth:`close` (idempotent). Closing drops the
+    verified state — deliberately, since it is scratch, not a store — and removes the temporary
+    directories, which keripy leaves standing on its own.
+
+    **What it does not carry** (constraint ``embuup``): the submitted bytes, in any form. The
+    credential is the one read back out of the scratch database after keripy saved it, and
+    ``frames`` records identifiers rather than message bodies, so nothing downstream can reach
+    around the audit to raw input.
+    """
+
+    did: object
+    aid: str
+    acdc: object
+    frames: tuple[AccountedFrame, ...]
+    scratch: Scratch
+
+    @property
+    def hby(self) -> habbing.Habery:
+        """The scratch keystore holding the accepted key and reply state."""
+        return self.scratch.hby
+
+    @property
+    def regery(self) -> credentialing.Regery:
+        """The scratch registry database holding the accepted TEL and credential state."""
+        return self.scratch.regery
+
+    def close(self) -> None:
+        """Release the verified state and its temporary databases. Idempotent."""
+        return self.scratch.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
+
+
+def ingest(stream: bytes, did) -> Verified:
+    """Verify a publication stream against the DID it claims to back.
+
+    The pipeline, in order: walk the stream, refuse what this build cannot read or will not
+    accept, refuse a submission that is incomplete or carries someone else's frames, ingest into
+    a scratch keripy stack, audit that every walked frame reached accepted state, and finally
+    check the authorization post-conditions on the designated-aliases credential.
+
+    Raises:
+        BakoboError: the first attributed failure. Success is defined by the audit, never by the
+            parser declining to raise.
+
+    Returns:
+        Verified: the accepted state, which the caller must close.
+    """
+    walked = walk(stream)
+    require_supported(did, walked)
+    require_no_third_party(did, walked)
+    require_delegator(did, walked)
+
+    scratch = open_scratch()
+    try:
+        scratch.load(stream)
+        audit(scratch, did, walked)
+        creder = authorize(scratch, did, walked)
+    except BaseException:
+        scratch.close()
+        raise
+
+    return Verified(
+        did=did,
+        aid=did.aid,
+        acdc=creder,
+        frames=tuple(
+            AccountedFrame(said=frame.said, ilk=frame.ilk, principal=frame.principal)
+            for frame in walked.frames
+        ),
+        scratch=scratch,
+    )
