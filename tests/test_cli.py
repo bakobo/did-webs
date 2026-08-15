@@ -20,6 +20,7 @@ import sys
 import builders
 import keri_api
 import pytest
+from test_ingest import REJECTIONS
 
 from didwebs import cli, ingest
 from didwebs import did as did_module
@@ -278,6 +279,41 @@ def test_the_installed_entry_point_publishes_end_to_end(keystore_stream, tmp_pat
     republished = (out / aid / "keri.cesr").read_bytes()
     with ingest.ingest(republished, did_module.parse(did)) as verified:
         assert verified.aid == aid
+
+
+@pytest.mark.parametrize("knob,code", REJECTIONS, ids=[knob for knob, _ in REJECTIONS])
+def test_no_refused_submission_leaves_an_artifact_tree_behind(knob, code, tmp_path):
+    """The operator contract over the *whole* negative matrix, through the real binary.
+
+    Two tests above establish the contract on one refusal each. This one establishes that it
+    holds for every stream the pipeline refuses, whatever the reason — a bad signature, a fork, a
+    stranger's publication, a serialization this build will not read. A half-published DID is
+    worse than an unpublished one, and the way that would happen is a failure mode nobody wrote
+    an individual test for, so the assertion is made against the matrix rather than against a
+    chosen example (ledger #22).
+
+    Driven as a subprocess rather than in process: what an operator runs is the installed console
+    script, and the claim "nothing was published" is about what is on disk after that process
+    exits, not about what a function returned.
+    """
+    stream, facts = fixture_stream(knob, tmp_path)
+    out = tmp_path / "www"
+
+    proc = subprocess.run(
+        [
+            "uv", "run", "didwebs", "publish",
+            "--stream", str(stream), "--did", facts["did_webs"], "--out", str(out),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    assert code in proc.stderr
+    assert not out.exists()  # not the AID's directory, not the output root, nothing
 
 
 def test_the_installed_entry_point_reports_a_refusal_on_stderr(tmp_path):
