@@ -913,33 +913,38 @@ def test_two_sequential_ingestions_share_no_state(tmp_path):
 # ---------------------------------------------------------------- the accounting invariant
 
 
-@pytest.mark.parametrize(
-    "knob",
-    [
-        "without_acdc",
-        "revoked_acdc",
-        "attacker_acdc",
-        "scope_miss",
-        "forked_kel",
-        "dropped_frame_candidate",
-        "third_party",
-        "cbor_frame",
-        "v2_frame",
-        "delegated:no-delegator",
-        "truncated",
-    ],
-)
-def test_every_rejection_names_a_final_didwebs_code(knob, tmp_path):
-    """TST's invariant, as one property over the whole negative matrix: a stream this pipeline
-    will not publish is refused with an attributed code, never with a bare exception and never
-    by publishing what survived."""
+#: The negative matrix: every fixture this pipeline refuses, and the exact code it earns.
+#: Each row is one of the design's §3.3 negative oracles, and a clause without a row here is
+#: not discharged (ledger #22).
+REJECTIONS = [
+    ("without_acdc", "e.input.missing.alias-acdc.f"),
+    ("truncated", "e.input.missing.alias-acdc.f"),
+    ("revoked_acdc", "e.state.revoked.alias-acdc.f"),
+    ("attacker_acdc", "e.grant.missing.alias.f"),
+    ("scope_miss", "e.grant.scope.alias.f"),
+    ("forked_kel", "e.state.conflict.kel.f"),
+    ("dropped_frame_candidate", "e.proof.stream.frame.f"),
+    ("third_party", "e.proof.stream.frame.f"),
+    ("cbor_frame", "e.feature.unsupported.serialization.f"),
+    ("v2_frame", "e.input.format.stream.f"),
+    ("delegated:no-delegator", "e.input.missing.delegator.f"),
+]
+
+
+@pytest.mark.parametrize("knob,code", REJECTIONS, ids=[knob for knob, _ in REJECTIONS])
+def test_the_negative_matrix_attributes_the_exact_code(knob, code, tmp_path):
+    """TST's invariant over the whole matrix: a stream this pipeline will not publish is refused
+    with an attributed code — never with a bare exception, and never by publishing what
+    survived. Every rejection is also final: there is nothing the submitter can retry into."""
     stream, facts = fixture(knob, tmp_path)
+    before = temp_stores()
 
     with pytest.raises(BakoboError) as caught:
         ingest.ingest(stream, claimed(facts))
 
-    assert caught.value.code.startswith("e.")
-    assert caught.value.code.endswith(".f")
+    assert caught.value.code == code
+    assert caught.value.retryable is False
+    assert temp_stores() == before
 
 
 @pytest.mark.parametrize("knob", ["base", "spelling_variants", "delegated", "deactivated"])
