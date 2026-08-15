@@ -370,6 +370,9 @@ class Scratch:
 
 def open_scratch() -> Scratch:
     """Build a fresh scratch stack in its own temporary databases."""
+    # Two further parsers are built indirectly and do not show up in a grep of this module:
+    # ``Habery`` constructs ``hby.psr`` from its ``version``, and ``Regery`` constructs its own
+    # from ``hby.version``. Passing V1 here is what pins both (constraint qbqfst).
     hby = habbing.Habery(name="didwebs-ingest", base="", temp=True, version=V1)
     regery = credentialing.Regery(hby=hby, name="didwebs-ingest", base="", temp=True)
     schemaing.pin_designated_aliases_schema(hby)
