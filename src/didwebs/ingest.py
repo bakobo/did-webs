@@ -744,13 +744,20 @@ def authorize(scratch: Scratch, did, walked: Walk):
 
 
 def endpoint_providers(scratch: Scratch, walked: Walk, aids) -> frozenset[str]:
-    """The AIDs ``aids`` authorized in an endpoint role, read from accepted reply records.
+    """Every AID the estate has made an endpoint of, read from accepted state.
 
-    An ``/end/role/add`` reply is signed by the controller and names the provider it authorizes
-    in ``a.eid``; that authorization is what makes the provider's own ``/loc/scheme`` reply part
-    of this publication rather than somebody else's endpoint advertisement.
+    Two sources, because did:webs establishes an endpoint role two ways and ``document.py``
+    projects services from both (design §Modules). A mailbox or an agent is authorized by an
+    ``/end/role/add`` reply naming it in ``a.eid``; that authorization is what makes the
+    provider's own ``/loc/scheme`` reply part of this publication rather than somebody else's
+    endpoint advertisement. A **witness** is not authorized that way at all — the witness role is
+    established by the KEL's own ``b`` list — so a witness's ``/loc/scheme`` reply arrives with no
+    role record behind it, and a predicate that demanded one would refuse every witnessed
+    publication this pipeline is ever sent.
     """
-    providers = set()
+    providers = {
+        wit for aid in aids if aid in scratch.hby.kevers for wit in scratch.hby.kevers[aid].wits
+    }
     for frame in walked.frames:
         record = _reply_record(scratch, frame)
         if record is None:
@@ -774,9 +781,10 @@ def owns_reply(scratch: Scratch, frame: Frame, aids, providers) -> bool:
     Two routes, and only two. A ``/end/role`` reply belongs to the controller it names in
     ``a.cid``. A ``/loc/scheme`` reply is signed by the *endpoint*, not by the controller — it
     says "this is where I am", so only the endpoint's own key can make it — and it belongs to
-    this publication when the endpoint is one the estate authorized in a role, or is a member of
-    the estate declaring its own location. Any other route fails closed: the predicate has no
-    rule that places it, so it is not this publication's to host (ledger #16).
+    this publication when the endpoint is one the estate made an endpoint of (see
+    :func:`endpoint_providers`), or is a member of the estate declaring its own location. Any
+    other route fails closed: the predicate has no rule that places it, so it is not this
+    publication's to host (ledger #16).
     """
     record = _reply_record(scratch, frame)
     if record is None:

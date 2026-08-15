@@ -613,6 +613,35 @@ def test_a_location_reply_from_a_provider_nobody_authorized_is_not_owned(tmp_pat
     assert caught.value.code_args[1] == facts["mailbox_aid"]
 
 
+def test_a_witnesss_location_reply_needs_no_role_authorization_to_be_owned(tmp_path):
+    """The one endpoint role that is not authorized by a reply at all.
+
+    ``document.py`` projects a witness service from the KEL's own ``b`` list — the witness role
+    is established there, not by ``/end/role/add`` — so a witness's ``/loc/scheme`` reply arrives
+    in a publication stream with no authorization record behind it. An ownership predicate that
+    demanded one would refuse every witnessed publication this pipeline is ever sent, which is a
+    failure mode no fixture in this suite can reach: a phase-1 fixture cannot carry a real
+    witness, because ``assemble.issue_aliases`` never returns while it waits for receipts that
+    only a receipting Doist would produce (worker E, tick ``~4geu``). So the witness list is
+    planted on the accepted key state, the way ``tests/test_document.py`` plants it to exercise
+    the same projection.
+    """
+    stream, facts = fixture("endpoints", tmp_path)
+    walked = ingest.walk(stream)
+
+    with loaded(stream) as scratch:
+        locations = ingest.Walk(replies(scratch, walked, "/loc/scheme"), None)
+        with pytest.raises(BakoboError):  # no role authorization anywhere in this walk
+            ingest.require_ownership(scratch, claimed(facts), locations)
+
+        scratch.hby.kevers[facts["aid"]].wits = [facts["mailbox_aid"], facts["agent_aid"]]
+
+        assert ingest.endpoint_providers(scratch, locations, {facts["aid"]}) == frozenset(
+            {facts["mailbox_aid"], facts["agent_aid"]}
+        )
+        assert ingest.require_ownership(scratch, claimed(facts), locations) is None
+
+
 def test_a_role_authorization_about_another_controller_is_not_owned(tmp_path):
     """``/end/role/add`` names the controller it binds in ``cid``; one naming somebody else is
     that controller's endorsement, not this publication's."""
