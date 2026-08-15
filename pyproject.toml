@@ -10,6 +10,7 @@ dependencies = [
     # The estate pin (this.i decisions gvimca/qbqfst) — witness pins the same keri commit, and
     # they must never diverge or `keri` cannot resolve. Public repo, plain HTTPS: anonymous
     # resolution needs no credential, in a fresh clone or in CI.
+    # ~3vol estate pin drift: heti has moved past this commit; see tick before bumping
     "keri @ git+https://github.com/bakobo/keripy@366d81071aea7be5b8ad35acbed815e1255224d5",
     # The shared ErrorCode/BakoboError machinery didwebs/errors.py is built on. Public repo,
     # plain HTTPS for the same reason as keri above.
