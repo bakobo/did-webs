@@ -252,7 +252,9 @@ of new code. Oracles, strongest first:
      (`e.state.conflict.kel.f`), asserting the `ldes` audit fired (SKP-F2, SEC-F2)
    - dropped-frame stream — valid stream plus one frame keripy will reject — rejected by
      accounting, not published minus the frame (SPC-F1)
-   - third-party-AID frames in the stream rejected
+   - third-party-AID frames in the stream rejected — both refusal points: bare chaff at the
+     pre-parse sweep (`third_party`), and a stranger's internally-valid estate riding a valid
+     submission at the post-authorization ownership check (`stranger_bundle`, audit step 4)
    - CBOR v1 frame rejected (`e.feature.unsupported.serialization.f`) (SKP-F5)
    - v2/unversioned frame rejected (`e.input.format.stream.f`)
    - secp256k1 key state rejected (`e.feature.unsupported.key.alg.f`)

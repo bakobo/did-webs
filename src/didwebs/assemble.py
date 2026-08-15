@@ -284,6 +284,9 @@ def emit_stream(verified) -> bytes:
     # Registries first, each once — a credential's transaction log means nothing without the
     # registry's, and two credentials may share one. For the single-credential publication
     # phase 1 produces this is byte-for-byte the reference's interleaved order.
+    # ~2nj7 registries are derived from accepted credentials' regids; a registry the claimed
+    # AID incepted but never issued from would be owned yet unemitted (unverified code-reading
+    # claim — needs a two-registry fixture).
     for regid in dict.fromkeys(creder.regid for creder in creders):
         msgs.extend(_tel_bytes(reger, regid))
     for creder in creders:
