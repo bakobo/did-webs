@@ -38,7 +38,7 @@ class Keystore:
 
 @pytest.fixture
 def keystore(tmp_path):
-    """One v1-pinned transferable controller in a scratch keystore under ``tmp_path``."""
-    with keri_api.open_keystore("issuer", tmp_path, salt_raw=CONTROLLER_SALT) as hby:
+    """One v1-pinned transferable controller in a scratch keystore."""
+    with keri_api.scratch("issuer", tmp_path, salt_raw=CONTROLLER_SALT) as (hby, regery):
         hab = keri_api.make_hab(hby, "issuer")
-        yield Keystore(hby, hab, keri_api.open_regery(hby))
+        yield Keystore(hby, hab, regery)

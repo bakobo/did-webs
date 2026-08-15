@@ -15,8 +15,9 @@ Adaptations from the reference, which targets keri 1.2.13:
 * The reference's witness/delegation Doers (``Dipper``, ``DipSealer``, ``WitnessReceiptor`` …)
   are dropped. didwebs phase-1 fixtures have no witnesses, so delegation approval is the
   synchronous three-step dance in :func:`approve_delegation` rather than a Doist pipeline.
-* Keystores are opened under pytest's ``tmp_path`` (``headDirPath``) so nothing is persisted
-  outside the test run, and salts are fixed so AIDs are stable across runs.
+* Keystores are temp stores. keripy ignores ``headDirPath`` for them (hio substitutes its own
+  ``mkdtemp`` under ``/tmp``) and close removes only the leaf, so :func:`scratch` removes the
+  stranded roots itself; salts are fixed so AIDs are stable across runs.
 
 Nothing here constructs the *ingest-side* stream: ``didwebs.assemble.emit_stream`` (a later
 brief) re-assembles a stream from verified state in a scratch database. :func:`publication_stream`
@@ -26,8 +27,10 @@ is the keystore-side counterpart — what a controller's own keystore would publ
 from __future__ import annotations
 
 import json
+import shutil
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from keri import core, kering
 from keri.app import habbing, signing
@@ -90,15 +93,39 @@ def open_keystore(name: str, tmp_path, *, salt_raw: bytes):
         yield hby
 
 
+def _temp_root(path: str) -> str:
+    """The ``mkdtemp`` root under ``/tmp`` that keripy's close leaves standing.
+
+    keripy ignores ``headDirPath`` for temp stores (hio ``Filer.remake`` substitutes its own
+    ``mkdtemp``) and its close removes only the store's leaf directory, stranding the root
+    (worker D's finding, 2026-08-15). Same walk as ``didwebs.ingest``'s scratch teardown.
+    """
+    p = Path(path)
+    while p.parent != Path("/tmp"):
+        p = p.parent
+    return str(p)
+
+
 @contextmanager
 def scratch(name: str, tmp_path, *, salt_raw: bytes = CONTROLLER_SALT):
-    """Yield ``(hby, regery)`` for a scratch keystore; both are closed on exit."""
-    with open_keystore(name, tmp_path, salt_raw=salt_raw) as hby:
-        regery = open_regery(hby)
-        try:
-            yield hby, regery
-        finally:
-            regery.close()
+    """Yield ``(hby, regery)``; closed on exit, with the leaked temp roots removed."""
+    roots: tuple[str, ...] = ()
+    try:
+        with open_keystore(name, tmp_path, salt_raw=salt_raw) as hby:
+            regery = open_regery(hby)
+            roots = tuple(
+                dict.fromkeys(
+                    _temp_root(store.path)
+                    for store in (hby.ks, hby.db, hby.cf, regery.reger)
+                )
+            )
+            try:
+                yield hby, regery
+            finally:
+                regery.close()
+    finally:
+        for root in roots:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 def make_hab(hby: habbing.Habery, name: str, **kwa) -> habbing.Hab:

@@ -10,9 +10,9 @@ from __future__ import annotations
 import copy
 import json
 
+import keri_api
 import pytest
 from bakobo.errors import BakoboError
-from keri.app.habbing import openHby
 from keri.core import scheming
 
 from didwebs import schemaing
@@ -87,7 +87,7 @@ def test_the_bundled_rules_satisfy_the_bundled_schemas_rules_block():
 
 
 def test_pinning_puts_the_schema_where_credential_creation_will_find_it(tmp_path):
-    with openHby(name="pin", temp=True, headDirPath=str(tmp_path)) as hby:
+    with keri_api.scratch("pin", tmp_path) as (hby, _regery):
         schemer = schemaing.pin_designated_aliases_schema(hby)
         assert schemer.said == PINNED_SAID
         assert hby.db.schema.get(keys=(PINNED_SAID,)).said == PINNED_SAID
@@ -95,7 +95,7 @@ def test_pinning_puts_the_schema_where_credential_creation_will_find_it(tmp_path
 
 
 def test_pinning_is_idempotent_and_reuses_the_already_pinned_schemer(tmp_path):
-    with openHby(name="pin2", temp=True, headDirPath=str(tmp_path)) as hby:
+    with keri_api.scratch("pin2", tmp_path) as (hby, _regery):
         first = schemaing.pin_designated_aliases_schema(hby)
         second = schemaing.pin_designated_aliases_schema(hby)
         assert first.said == second.said == PINNED_SAID
