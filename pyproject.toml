@@ -15,6 +15,7 @@ dependencies = [
     # The shared ErrorCode/BakoboError machinery didwebs/errors.py is built on. Public repo,
     # plain HTTPS for the same reason as keri above.
     "bakobo-errors @ git+https://github.com/bakobo/errors@45f42ae4259cce144fe1d668c9c176d869c3023a",
+    "rfc3986>=2.0.0",
 ]
 
 [project.scripts]
