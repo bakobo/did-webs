@@ -7,12 +7,20 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 17 codes below are verbatim from docs/design.md's reconciled table (rev 2, 2026-08-14),
-already checked against the bakobo/errors catalog at the `bakobo-errors` pin — none collides
-with a shipped code, and three are boundary cases against heti's near-neighbors, called out as a
-comment where each is declared. Identity is the contract: a code's string, once shipped, never
-changes (dev/standards/error-codes.md, "A code's meaning and `args` signature never change once
-shipped").
+The 19 codes below are verbatim from docs/design.md's reconciled table (rev 2, 2026-08-14). The
+table has sixteen rows: `e.proof.stream.*.f` is written once and names its four leaves — `sig`,
+`seal`, `anchor`, `frame` — in the same cell, because the audit picks between them by which
+escrow held the frame. All nineteen were checked against the bakobo/errors catalog at the
+`bakobo-errors` pin — none collides with a shipped code, and three are boundary cases against
+heti's near-neighbors, called out as a comment where each is declared. Identity is the contract:
+a code's string, once shipped, never changes (dev/standards/error-codes.md, "A code's meaning
+and `args` signature never change once shipped").
+
+The count in the paragraph above is not decoration: `tests/test_errors.py` reads it back and
+compares it against what this module actually declares, having found the registry by type rather
+than by a hand-kept list. That gate exists because the hand-kept list drifted — it went on saying
+seventeen while `e.rule.stream.third-party.f` and `e.self.corrupt.schema.f` were minted, raised,
+and asserted elsewhere in the suite.
 """
 
 from __future__ import annotations
