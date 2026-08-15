@@ -43,6 +43,14 @@ version argument at all and derive it from the registry's inception; where an ex
 impossible, the call is wrapped in an assertion guard (`assemble._v1()`) that refuses a non-v1
 serder, and the version-string oracle backstops the whole surface.
 
+A third fact, found by the ingest commission: **the likely-duplicitous escrow is dead code at
+the pin** (tick `~3v45`). `escrowLDEvent` calls `db.addLde`, which `Baser` never defines; the
+`AttributeError` is swallowed inside event processing (logged, misleadingly, as "No kevery to
+process so dropped msg"), so a forked event is dropped silently rather than escrowed. The
+escrow audit therefore unions the `ldes` read — correct the moment keripy repairs it — with a
+same-sequence-number conflict scan of the accepted KEL, which is what actually fires today.
+The fork oracle asserts the conflict is detected either way.
+
 ## Modules
 
 - `didwebs/did.py` — the `WebsDid` value type. Parse/compose/validate per the spec's MSI
@@ -78,8 +86,13 @@ serder, and the version-string oracle backstops the whole surface.
      be accounted **accepted**: KEL events present in the Kever's first-seen log, TEL events in
      the Tever, ACDCs saved with their TEL state, `rpy` records BADA-accepted. Any walked
      frame not in accepted state → the error attribution map below. Frames about AIDs other
-     than the claimed AID and its delegator chain are rejected outright (no third-party chaff
-     in a publication stream).
+     than the claimed AID, its delegator chain, and issuers of credentials the stream itself
+     carries are rejected outright with `e.rule.stream.third-party.f` (no third-party chaff in
+     a publication stream). The credential-issuer admission is deliberate: it is what lets an
+     attacker-issued ACDC reach the issuer-binding post-condition KRT-F1 exists to prove,
+     rather than being rejected a step early for the wrong reason; the residual breadth is
+     harmless because hosted artifacts derive only from the claimed AID's and its delegator's
+     accepted state.
   2. **Escrow audit** (SEC-F2, KRT-F2). After drains, the scratch database's escrows are
      inspected and mapped to codes: non-empty likely-duplicitous escrow (`ldes`) →
      `e.state.conflict.kel.f` (intra-stream fork; first-seen-wins is *not* acceptance);
@@ -178,6 +191,7 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 | `e.grant.missing.alias.f` | ACDC present but not the claimed AID's authorization (wrong issuer, or registry not anchored in the claimed AID's KEL) |
 | `e.grant.scope.alias.f` | controller's own ACDC does not cover the claimed DID (or its did:web form) under normalized equality |
 | `e.rule.alias.aid.mismatch.f` | an `a.ids` entry names a different AID than the stream verifies (spec same-AID constraint) |
+| `e.rule.stream.third-party.f` | a frame concerns an identifier the stream is not publishing — keripy accepts it fine; the no-chaff norm is ours |
 | `e.feature.unsupported.key.alg.f` | non-Ed25519 key in current key state (decision `3woefn`) |
 | `e.feature.unsupported.threshold.f` | multi-clause (conjunctive) `kt` — unrepresentable in `ConditionalProof2022` |
 | `e.self.corrupt.schema.f` | the bundled designated-aliases schema fails SAID recomputation at load — our packaging fault, never the submitter's |
