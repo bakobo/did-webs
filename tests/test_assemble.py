@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import json
 
+import builders
 import keri_api
 import pytest
 from conftest import CONTROLLER_SALT, designated_ids
-from keri.core import coring
+from keri.core import coring, counting
 from keri.kering import Vrsn_1_0, Vrsn_2_0
 
-from didwebs import assemble, schemaing
+from didwebs import assemble, document, ingest, schemaing
+from didwebs import did as did_module
 
 
 def kel_bodies(hab):
@@ -189,3 +191,166 @@ def test_a_revoked_stream_still_contains_only_v1_version_strings(keystore):
     assemble.revoke_aliases(keystore.hab, keystore.regery, issued)
     stream = keri_api.publication_stream(keystore.hab, keystore.regery, issued.creder)
     assert set(keri_api.version_strings(stream)) <= keri_api.ACCEPTED_VERSION_STRINGS
+
+
+# ------------------------------------------------- the ingest side: emit_stream (embuup)
+
+
+def emitted(knob, tmp_path):
+    """A fixture's stream, ingested, and the `keri.cesr` re-assembled from what was accepted."""
+    stream, facts = builders.KNOBS[knob](tmp_path)
+    did = did_module.parse(facts["did_webs"])
+    with ingest.ingest(stream, did) as verified:
+        return assemble.emit_stream(verified), stream, facts
+
+
+def saids(stream):
+    return [frame.said for frame in ingest.walk(stream).frames]
+
+
+def key_state(kever):
+    """Everything the current key state commits to, as comparable values.
+
+    Deliberately not the whole `KeyStateRecord`: that carries the first-seen ordinal and the
+    datetime keripy stamped when *this* database saw the event, which are properties of an
+    ingestion rather than of the key state a document rests on.
+    """
+    return (
+        kever.sner.num,
+        [verfer.qb64 for verfer in kever.verfers],
+        kever.tholder.sith,
+        [diger.qb64 for diger in kever.ndigers],
+        kever.ntholder.sith,
+        list(kever.wits),
+        kever.toader.num,
+        kever.delpre,
+    )
+
+
+def test_the_emitted_stream_carries_every_frame_the_submission_did(tmp_path):
+    """`embuup`: the hosted artifact is re-assembled by replay from the scratch database, so it
+    is a normalized equivalent of the submission rather than a copy of it — same messages, in
+    the reference's re-ingestable order, byte-for-byte different in the first-seen replay
+    couples keripy stamps on the way out."""
+    emitted_stream, submitted, _ = emitted("base", tmp_path)
+
+    assert saids(emitted_stream) == saids(submitted)
+    assert keri_api.bodies(emitted_stream) == keri_api.bodies(submitted)
+
+
+def test_the_emitted_stream_is_not_the_submitted_bytes(tmp_path):
+    """The point of the constraint: nothing downstream can reach around the audit by copying
+    input to output. `Verified` does not even carry the submitted bytes, and this asserts the
+    output is genuinely re-derived rather than incidentally identical."""
+    emitted_stream, submitted, _ = emitted("base", tmp_path)
+
+    assert emitted_stream != submitted
+
+
+def test_the_emitted_stream_orders_frames_the_way_the_reference_emits_them(tmp_path):
+    """KEL first, then the reply records, then per credential its registry TEL, its own TEL and
+    the ACDC — `dws/core/artifacting.py`'s `generate_artifacts` order, which is what the GLEIF
+    resolver re-ingests."""
+    emitted_stream, _, _ = emitted("endpoints", tmp_path)
+
+    assert [frame.ilk for frame in ingest.walk(emitted_stream).frames] == [
+        "icp",
+        "ixn",
+        "ixn",
+        "rpy",
+        "rpy",
+        "rpy",
+        "rpy",
+        "vcp",
+        "iss",
+        None,  # an ACDC has no `t` field, which is how the walk names one
+    ]
+
+
+def test_a_delegated_publication_replays_its_delegators_kel_first(tmp_path):
+    """A delegate's own events cannot be verified before the delegator's, so `Hab.replay`'s
+    recipe — `cloneDelegation` and then the AID's own first-seen log — is what the emission
+    follows."""
+    emitted_stream, _, facts = emitted("delegated", tmp_path)
+    principals = [frame.principal for frame in ingest.walk(emitted_stream).frames]
+
+    assert principals[0] == facts["delegator_aid"]
+    assert facts["aid"] in principals
+    assert principals.index(facts["delegator_aid"]) < principals.index(facts["aid"])
+
+
+def test_the_emitted_reply_records_are_the_ones_the_audit_accepted(tmp_path):
+    """Two signature shapes, both re-assembled from stored state: a location scheme is signed
+    by its own non-transferable endpoint provider (a single cigar), and a role authorization is
+    signed by the transferable controller (a transferable indexed-signature group)."""
+    emitted_stream, _, facts = emitted("endpoints", tmp_path)
+    replies = [body for body in keri_api.bodies(emitted_stream) if body.get("t") == "rpy"]
+
+    assert [body["r"] for body in replies] == [
+        "/loc/scheme",
+        "/loc/scheme",
+        "/end/role/add",
+        "/end/role/add",
+    ]
+    assert {body["a"]["eid"] for body in replies} == {facts["mailbox_aid"], facts["agent_aid"]}
+
+
+def test_the_emitted_stream_carries_only_v1_json_version_strings(tmp_path):
+    """Constraint qbqfst on the emission path (design oracle 3)."""
+    for knob in ("base", "delegated", "deactivated", "endpoints"):
+        emitted_stream, _, _ = emitted(knob, tmp_path / knob)
+        assert set(keri_api.version_strings(emitted_stream)) <= keri_api.ACCEPTED_VERSION_STRINGS
+
+
+def test_every_attachment_group_in_an_emitted_stream_is_a_v1_counter(tmp_path):
+    """The other half of the version oracle, and the one a body-only check would miss: a bare
+    `hab.interact` on this keripy line emits v2 attachment counters onto a v1 body, and every
+    deployed 1.2.x parser drops the frame. Each frame's attachment is read here with the v1
+    code table explicitly, so a v2 counter fails to parse rather than shipping."""
+    emitted_stream, _, _ = emitted("endpoints", tmp_path)
+
+    for frame in keri_api.frames(emitted_stream):
+        counter = counting.Counter(qb64b=frame.attachments, version=Vrsn_1_0)
+        assert counter.code in counting.CtrDex_1_0
+        assert counter.code not in (
+            counting.CtrDex_2_0.ControllerIdxSigs,
+            counting.CtrDex_2_0.TransIdxSigGroups,
+            counting.CtrDex_2_0.TransLastIdxSigGroups,
+        )
+
+
+@pytest.mark.parametrize("knob", ["base", "delegated", "deactivated"])
+def test_the_emitted_stream_re_ingests_to_the_same_state_and_the_same_document(knob, tmp_path):
+    """Round-trip identity (design oracle 2), the strength rung: whatever the emission drops,
+    reorders or fails to sign shows up here without any per-field assertion having to have
+    anticipated it. What is hosted must verify to exactly what was verified."""
+    stream, facts = builders.KNOBS[knob](tmp_path)
+    did = did_module.parse(facts["did_webs"])
+
+    with ingest.ingest(stream, did) as first:
+        emitted_stream = assemble.emit_stream(first)
+        original_frames = {frame.said for frame in first.frames}
+        original_doc = document.derive_document(first, did)
+        original_state = key_state(first.hby.kevers[did.aid])
+
+    with ingest.ingest(emitted_stream, did) as second:
+        assert {frame.said for frame in second.frames} == original_frames
+        assert key_state(second.hby.kevers[did.aid]) == original_state
+        assert document.derive_document(second, did) == original_doc
+        assert second.acdc.said == first.acdc.said
+
+
+def test_a_round_tripped_stream_still_carries_its_endpoints(tmp_path):
+    """The reply records are the part most easily lost in re-assembly: they are signed
+    separately, BADA-accepted separately, and belong to no KEL. Round-tripping the endpoints
+    fixture proves the services survive the trip, not just the key state."""
+    stream, facts = builders.endpoints(tmp_path)
+    did = did_module.parse(facts["did_webs"])
+
+    with ingest.ingest(stream, did) as first:
+        emitted_stream = assemble.emit_stream(first)
+        original_doc = document.derive_document(first, did)
+
+    with ingest.ingest(emitted_stream, did) as second:
+        assert document.derive_document(second, did) == original_doc
+        assert len(original_doc["service"]) == 2

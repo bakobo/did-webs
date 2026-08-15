@@ -1,16 +1,16 @@
-"""Two roles, one emitter — this module is the keystore side; the ingest side lands later.
+"""Two roles, one emitter — the keystore side that issues, and the ingest side that publishes.
 
-**Keystore side (this module, today).** ``issue_aliases`` and ``revoke_aliases`` create a
+**Keystore side.** ``issue_aliases`` and ``revoke_aliases`` create a
 credential registry, issue the self-attested designated-aliases ACDC against the pinned schema,
 and anchor both TEL events in the controller's KEL with interaction events. Per decision
 ``avuwzl`` this issuance code exists only for keystores we control — tests, demos, and
 fixtures. It is deliberately not a product verb: nothing in the publication pipeline calls it,
 and a customer's keystore is never ours to write to.
 
-**Ingest side (``emit_stream``, a later brief).** ``emit_stream(verified) -> bytes``
-re-assembles ``keri.cesr`` by replay *from the scratch database's accepted state* — never from
-the submitted bytes (constraint ``embuup``). It is the hosted-artifact path, and it shares this
-module because both roles emit the same wire shapes; it is not implemented here yet.
+**Ingest side (``emit_stream``).** ``emit_stream(verified) -> bytes`` re-assembles
+``keri.cesr`` by replay *from the scratch database's accepted state* — never from the submitted
+bytes (constraint ``embuup``). It is the hosted-artifact path, and it shares this module
+because both roles emit the same wire shapes.
 
 Protocol v1 is pinned explicitly at every call that constructs an event (constraint
 ``qbqfst``). On this keripy line (2.0.0-dev6) the version default is v2 and it is chosen *per
@@ -32,8 +32,9 @@ from dataclasses import dataclass
 
 from hio.base import doing
 from hio.help import decking
-from keri.app import grouping, habbing
-from keri.core import eventing, serdering
+from keri.app import grouping, habbing, signing
+from keri.core import coring, eventing, serdering
+from keri.db.dbing import fetchTsgs
 from keri.kering import Vrsn_1_0
 from keri.vdr import credentialing, verifying
 
@@ -181,6 +182,110 @@ def issue_aliases(
         machinery.drain()
 
     return Issued(registry, creder, iss_serder, iss_anchor)
+
+
+# --------------------------------------------------- the ingest side: the hosted keri.cesr
+
+
+#: An accounted frame with no message type is an ACDC: a credential carries no ``t`` field, so
+#: the walk that produced :class:`~didwebs.ingest.AccountedFrame` had no ilk to record.
+CREDENTIAL = None
+
+REPLY = "rpy"
+
+
+def _reply_bytes(db, said: str) -> bytes:
+    """Re-assemble one BADA-accepted reply record from the state keripy stored for it.
+
+    A port of ``Hab.loadLocScheme``/``loadEndRole``, keyed by SAID rather than by walking the
+    endpoint tables: the audit already named exactly which replies were accepted, so there is
+    nothing to search for. Two signature shapes reach here — a non-transferable endpoint
+    provider signs its own location scheme with a single cigar, while a transferable controller
+    signs a role authorization with an indexed-signature group — and keripy's ``messagize``
+    re-attaches whichever was stored, with the CESR genus pinned to v1 (``qbqfst``).
+    """
+    serder = db.rpys.get(keys=(said,))
+    cigars = db.scgs.get(keys=(said,))
+    tsgs = fetchTsgs(db=db.tsgs, diger=coring.Saider(qb64=said))
+
+    cigar = None
+    if len(cigars) == 1:
+        verfer, cigar = cigars[0]
+        cigar.verfer = verfer
+
+    return bytes(
+        eventing.messagize(
+            serder=serder, cigars=[cigar] if cigar else [], tsgs=tsgs, gvrsn=V1
+        )
+    )
+
+
+def _tel_bytes(reger, pre: str) -> bytes:
+    """Clone a transaction event log — a registry's or a credential's — from accepted state.
+
+    ``Reger.clonePreIter`` takes no genus argument on this keripy line; it emits v1 attachment
+    counters unconditionally (``keri/vdr/eventing.py``, ``cloneTvt``).
+    """
+    msgs = bytearray()
+    for msg in reger.clonePreIter(pre=pre):
+        msgs.extend(msg)
+    return bytes(msgs)
+
+
+def emit_stream(verified) -> bytes:
+    """Re-assemble the hosted ``keri.cesr`` for a verified publication (constraint ``embuup``).
+
+    **Every byte is replayed out of the scratch database**, which holds only what keripy
+    accepted and the post-parse audit accounted for. The submitted bytes are never written —
+    :class:`~didwebs.ingest.Verified` does not carry them — so a frame keripy silently dropped,
+    a fork branch it refused, or a reply it left in escrow cannot reach the artifact tree. The
+    hosted stream is therefore a normalized equivalent of the controller's submission, not a
+    byte-identical copy of it.
+
+    The order is the reference's (``dws/core/artifacting.py``, ``generate_artifacts``), which
+    is what the deployed did:webs ecosystem re-ingests: the key event log with the delegator's
+    replayed first, then the accepted reply records, then for each accepted credential its
+    registry's transaction log, its own, and the credential itself.
+
+    Args:
+        verified: the state an :func:`~didwebs.ingest.ingest` produced. Must still be open.
+
+    Returns:
+        bytes: the ``keri.cesr`` artifact.
+    """
+    hby = verified.hby
+    db = hby.db
+    reger = verified.regery.reger
+    kever = hby.kevers[verified.aid]
+
+    msgs = bytearray()
+    # `Hab.replay`'s recipe, driven on the database because a published AID is never a local
+    # Hab: a delegate's events cannot be verified before its delegator's.
+    for msg in db.cloneDelegation(kever=kever, gvrsn=V1):
+        msgs.extend(msg)
+    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V1):
+        msgs.extend(msg)
+
+    for frame in verified.frames:
+        if frame.ilk == REPLY:
+            msgs.extend(_reply_bytes(db, frame.said))
+
+    creders = [
+        reger.creds.get(keys=(frame.said,))
+        for frame in verified.frames
+        if frame.ilk is CREDENTIAL
+    ]
+    # Registries first, each once — a credential's transaction log means nothing without the
+    # registry's, and two credentials may share one. For the single-credential publication
+    # phase 1 produces this is byte-for-byte the reference's interleaved order.
+    for regid in dict.fromkeys(creder.regid for creder in creders):
+        msgs.extend(_tel_bytes(reger, regid))
+    for creder in creders:
+        msgs.extend(_tel_bytes(reger, creder.said))
+        prefixer, seqner, saider = reger.cancs.get(keys=(creder.said,))
+        msgs.extend(signing.serialize(creder, prefixer, seqner, saider))
+
+    return bytes(msgs)
 
 
 def revoke_aliases(
