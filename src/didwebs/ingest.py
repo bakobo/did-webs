@@ -29,18 +29,37 @@ own CESR genus version, defaulting to v2, and a valid v1 stream fed to a v2-genu
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import os
+import shutil
+import tempfile
+from dataclasses import dataclass, field, replace
+from typing import Self
 
-from keri.core import serdering
+from keri.app import habbing
+from keri.core import eventing as keventing
+from keri.core import routing, serdering
 from keri.core.parsing import Parser
 from keri.kering import Kinds, Vrsn_1_0
+from keri.peer import exchanging
+from keri.vdr import credentialing, verifying
+from keri.vdr import eventing as teventing
 
-from didwebs import errors
+from didwebs import errors, schemaing
 
 __all__ = [
     "Frame",
+    "Scratch",
     "Walk",
     "WalkFailure",
+    "accepted",
+    "account_frames",
+    "attribute",
+    "audit",
+    "delegators",
+    "duplicitous",
+    "open_scratch",
+    "require_delegator",
+    "require_no_third_party",
     "require_supported",
     "walk",
 ]
@@ -89,6 +108,21 @@ class Frame:
     def replace(self, **changes) -> Frame:
         """A copy with ``changes`` applied — the dataclass helper, exposed for audit tests."""
         return replace(self, **changes)
+
+    @property
+    def is_kel(self) -> bool:
+        """A key event: its principal is an AID."""
+        return self.proto == KERI and self.ilk in KEL_ILKS
+
+    @property
+    def is_tel(self) -> bool:
+        """A transaction event: its principal is a registry or a credential identifier."""
+        return self.proto == KERI and self.ilk in TEL_ILKS
+
+    @property
+    def is_acdc(self) -> bool:
+        """A credential: its principal is its issuer."""
+        return self.proto == ACDC
 
 
 @dataclass(frozen=True)
@@ -225,3 +259,353 @@ def require_supported(did, walked: Walk) -> None:
             raise errors.STREAM_UNWALKABLE(did=did.compose())
     for fault in faults:
         raise errors.SERIALIZATION_UNSUPPORTED(did=did.compose(), kind=fault.kind)
+
+
+# ---------------------------------------------------------------- the scratch keripy state
+
+
+def _temp_root(path: str) -> str:
+    """The ``mkdtemp`` directory keripy created for a store, given the store's own path.
+
+    hio's ``Filer`` ignores ``headDirPath`` when ``temp=True`` and makes its own directory under
+    the system temp dir, then on close removes only the *leaf* of the path inside it — leaving
+    the ``mkdtemp`` root standing. Ingest removes the roots itself, so a run leaves no litter.
+    """
+    root = os.path.realpath(tempfile.gettempdir())
+    node = os.path.realpath(path)
+    parent = os.path.dirname(node)
+    while parent not in (root, os.path.dirname(parent)):
+        node, parent = parent, os.path.dirname(parent)
+    return node
+
+
+@dataclass
+class Scratch:
+    """A per-call keripy stack in its own temporary databases.
+
+    Verified state never persists beyond a :class:`Verified`'s lifetime and no two ingestions
+    share LMDB state, so a submission can neither read nor poison what an earlier one established.
+    The stack is the reference recipe's (``dws/core/resolving.py``): ``Router``/``Revery`` built
+    **before** the ``Kevery`` so the Kevery's reply router is set, then ``Tevery``, ``Verifier``,
+    and reply routes registered on both.
+    """
+
+    hby: habbing.Habery
+    regery: credentialing.Regery
+    kevery: keventing.Kevery
+    tevery: teventing.Tevery
+    verifier: verifying.Verifier
+    revery: routing.Revery
+    exchanger: exchanging.Exchanger
+    roots: tuple[str, ...]
+    passes: int = 0
+    closed: bool = field(default=False)
+
+    def load(self, stream: bytes) -> None:
+        """Parse ``stream`` into the scratch databases and drain every escrow to a fixpoint.
+
+        The genus pin is on the ``parse`` call, not merely on the ``Habery``: without it a valid
+        v1 stream yields nothing at all (constraint ``qbqfst``).
+
+        Draining once is not enough. keripy's ``Kevery.processEscrows`` runs out-of-order
+        *before* partial-delegation, so a delegated AID's interaction events cannot resolve on
+        the pass that finally accepts its inception; the TEL and credential escrows then depend on
+        those events in turn. The loop therefore repeats until no escrow changes.
+        """
+        self.hby.psr.parse(
+            ims=bytearray(stream),
+            kvy=self.kevery,
+            tvy=self.tevery,
+            vry=self.verifier,
+            rvy=self.revery,
+            exc=self.exchanger,
+            local=False,
+            version=V1,
+        )
+        seen = None
+        while True:
+            self.kevery.processEscrows()
+            self.tevery.processEscrows()
+            self.verifier.processEscrows()
+            self.revery.processEscrowReply()
+            self.passes += 1
+            state = self._escrow_state()
+            if state == seen:
+                return
+            seen = state
+
+    def _escrow_state(self) -> tuple:
+        return tuple(sorted(self.escrow_saids(name)) for name in _AUDITED_ESCROWS)
+
+    def escrow_saids(self, name: str) -> set[str]:
+        """Every message SAID sitting in the named escrow, whichever database holds it."""
+        return _ESCROW_READERS[name](self)
+
+    def close(self) -> None:
+        """Close the databases and remove their temporary directories. Idempotent."""
+        if self.closed:
+            return
+        self.closed = True
+        self.regery.close()
+        self.hby.close(clear=True)
+        for root in self.roots:
+            shutil.rmtree(root, ignore_errors=True)
+        return
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
+
+
+def open_scratch() -> Scratch:
+    """Build a fresh scratch stack in its own temporary databases."""
+    hby = habbing.Habery(name="didwebs-ingest", base="", temp=True, version=V1)
+    regery = credentialing.Regery(hby=hby, name="didwebs-ingest", base="", temp=True)
+    schemaing.pin_designated_aliases_schema(hby)
+
+    router = routing.Router()
+    revery = routing.Revery(db=hby.db, rtr=router)  # before the Kevery, so kvy.rvy is set
+    exchanger = exchanging.Exchanger(hby=hby, handlers=[])
+    kevery = keventing.Kevery(db=hby.db, rvy=revery)
+    tevery = teventing.Tevery(db=hby.db, reger=regery.reger)
+    verifier = verifying.Verifier(hby=hby, reger=regery.reger)
+    kevery.registerReplyRoutes(router=router)  # LocScheme and EndRole records
+    tevery.registerReplyRoutes(router=router)  # ACDC rpy messages
+
+    roots = tuple(
+        dict.fromkeys(
+            _temp_root(store.path)
+            for store in (hby.ks, hby.db, hby.cf, regery.reger)
+        )
+    )
+    return Scratch(hby, regery, kevery, tevery, verifier, revery, exchanger, roots)
+
+
+def _on_escrow(store_of, name):
+    """Read a sequence-keyed escrow (``OnIoDupSuber``) as a set of SAIDs."""
+
+    def read(scratch: Scratch) -> set[str]:
+        return {str(said) for _, _, said in getattr(store_of(scratch), name).getAllItemIter()}
+
+    return read
+
+
+def _said_escrow(store_of, name):
+    """Read a SAID-keyed escrow as a set of SAIDs."""
+
+    def read(scratch: Scratch) -> set[str]:
+        return {keys[0] for keys, _ in getattr(store_of(scratch), name).getTopItemIter()}
+
+    return read
+
+
+def _db(scratch: Scratch):
+    return scratch.hby.db
+
+
+def _reger(scratch: Scratch):
+    return scratch.regery.reger
+
+
+#: Every escrow the audit reads, by name. ``ldes`` is the likely-duplicitous escrow the design
+#: names as the fork mechanism; it is inert on this keripy line (``Kevery.escrowLDEvent`` calls
+#: ``Baser.addLde``, which the pin does not define), so :func:`duplicitous` also reads the
+#: accepted key event log. Keep both: the escrow is the correct mechanism the moment keripy has it.
+_ESCROW_READERS = {
+    "pses": _on_escrow(_db, "pses"),
+    "pwes": _on_escrow(_db, "pwes"),
+    "pdes": _on_escrow(_db, "pdes"),
+    "ooes": _on_escrow(_db, "ooes"),
+    "ldes": _on_escrow(_db, "ldes"),
+    "oots": _on_escrow(_reger, "oots"),
+    "twes": _on_escrow(_reger, "twes"),
+    "taes": _on_escrow(_reger, "taes"),
+    "cmse": _said_escrow(_reger, "cmse"),
+}
+
+#: The escrows whose contents define whether draining has reached a fixpoint.
+_AUDITED_ESCROWS = tuple(_ESCROW_READERS)
+
+#: Escrow-to-code attribution, in order; the first escrow holding a frame names its fault.
+#: Everything not listed — out-of-order, partially witnessed, and anything keripy dropped without
+#: escrowing — is residue and gets ``e.proof.stream.frame.f`` (design §Error codes, ledger #16).
+_ATTRIBUTION = (
+    ("pses", errors.STREAM_SIG_INVALID),
+    ("cmse", errors.STREAM_SIG_INVALID),
+    ("pdes", errors.STREAM_SEAL_INVALID),
+    ("taes", errors.STREAM_ANCHOR_INVALID),
+)
+
+
+# ------------------------------------------------------------ whose frames may appear at all
+
+
+def delegators(did, walked: Walk) -> frozenset[str]:
+    """The claimed AID's delegator chain, as the submitted stream declares it.
+
+    Read from the ``di`` field of delegated inception events in the walk, followed transitively,
+    so a delegate of a delegate names both. Phase 1 never dereferences an OOBI to discover one.
+    """
+    declared = {
+        frame.principal: frame.serder.ked["di"]
+        for frame in walked.frames
+        if frame.ilk == "dip"
+    }
+    chain: set[str] = set()
+    pending = [did.aid]
+    while pending:
+        aid = pending.pop()
+        parent = declared.get(aid)
+        if parent is not None and parent not in chain:
+            chain.add(parent)
+            pending.append(parent)
+    return frozenset(chain)
+
+
+def require_delegator(did, walked: Walk) -> None:
+    """Refuse a delegated AID whose delegator's key event log is not in the submission.
+
+    Checked here, before keripy sees the stream, and not from the escrow audit: without the
+    delegator's KEL the delegated inception lands in the partial-delegation escrow, which the
+    attribution map would report as a seal fault. The honest fault is that the submission is
+    incomplete, and phase 1 will not fetch the rest.
+    """
+    present = {frame.principal for frame in walked.frames if frame.is_kel}
+    for delegator in delegators(did, walked):
+        if delegator not in present:
+            raise errors.DELEGATOR_MISSING(aid=did.aid, delegator=delegator)
+
+
+def _is_third_party(frame: Frame, aids, registries, credentials) -> bool:
+    """Whether ``frame`` is about someone other than the claimed AID's publication.
+
+    An AID is admitted when it is the claimed AID, somewhere in its delegator chain, or the
+    issuer of a registry the stream itself carries. That last clause is what lets an
+    attacker-issued alias ACDC reach the authorization post-conditions, where the issuer-binding
+    check names the real fault (KRT-F1), instead of being turned away here as chaff and reported
+    as a frame the pipeline could not place.
+    """
+    if frame.is_kel or frame.is_acdc:
+        return frame.principal not in aids
+    if frame.is_tel:
+        return frame.principal not in registries and frame.principal not in credentials
+    return False  # replies and anything else are swept by accounting, not by principal
+
+
+def require_no_third_party(did, walked: Walk) -> None:
+    """Refuse a publication stream carrying frames about anyone else (design §Modules 1)."""
+    aids = {did.aid, *delegators(did, walked)}
+    aids |= {
+        frame.serder.ked["ii"]
+        for frame in walked.frames
+        if frame.ilk == REGISTRY_INCEPTION
+    }
+    registries = {frame.principal for frame in walked.frames if frame.ilk == REGISTRY_INCEPTION}
+    credentials = {frame.said for frame in walked.frames if frame.is_acdc}
+
+    for frame in walked.frames:
+        if _is_third_party(frame, aids, registries, credentials):
+            raise errors.STREAM_FRAME_REJECTED(frame=frame.said)
+
+
+# ------------------------------------------------------------------- the accounting audit
+
+
+def _reply_accepted(scratch: Scratch, frame: Frame) -> bool:
+    """Whether a reply record was BADA-accepted rather than left in the reply escrow."""
+    if scratch.hby.db.rpys.get(keys=(frame.said,)) is None:
+        return False
+    escrowed = {saider.qb64 for _, saider in scratch.hby.db.rpes.getTopItemIter()}
+    return frame.said not in escrowed
+
+
+def accepted(scratch: Scratch, frame: Frame) -> bool:
+    """Whether keripy put ``frame`` into accepted state, by message class.
+
+    A key event is accepted when it is in the first-seen log (``db.fons``) — deliberately not
+    ``db.evts``, which also holds escrowed events that may never be first-seen. A transaction
+    event is accepted when the registry's or credential's TEL carries it at its own sequence
+    number. A credential is accepted when it is saved *and* its TEL state exists. Anything else
+    is not accepted: an unrecognized message class fails closed.
+    """
+    if frame.is_kel:
+        return scratch.hby.db.fons.get(keys=(frame.principal, frame.said)) is not None
+    if frame.is_tel:
+        return scratch.regery.reger.tels.get(keys=frame.principal, on=frame.sn) == frame.said
+    if frame.is_acdc:
+        return scratch.regery.reger.saved.get(keys=(frame.said,)) is not None
+    if frame.ilk == "rpy":
+        return _reply_accepted(scratch, frame)
+    return False
+
+
+def account_frames(scratch: Scratch, walked: Walk) -> tuple[Frame, ...]:
+    """The walked frames keripy did **not** accept.
+
+    This is the invariant that makes a silently dropped frame visible: every frame the submitter
+    sent is either in accepted state or is named here, and a named frame stops the publication.
+    """
+    return tuple(frame for frame in walked.frames if not accepted(scratch, frame))
+
+
+def duplicitous(scratch: Scratch, walked: Walk) -> set[str]:
+    """SAIDs in the submission that conflict with an event already accepted at the same place.
+
+    Two sources, unioned. keripy's likely-duplicitous escrow is the design's stated mechanism.
+    The accepted key event log is the one that actually fires at the estate pin, where
+    ``escrowLDEvent`` raises ``AttributeError`` on a ``Baser.addLde`` that does not exist and the
+    Parser swallows it — so a fork is dropped without a trace in ``ldes``.
+    """
+    found = set(scratch.escrow_saids("ldes"))
+    for frame in walked.frames:
+        if not frame.is_kel:
+            continue
+        winner = scratch.hby.db.kels.getLast(keys=frame.principal, on=frame.sn)
+        if winner is not None and str(winner) != frame.said:
+            found.add(frame.said)
+    return found
+
+
+def _signature_fails(scratch: Scratch, frame: Frame) -> bool:
+    """Whether ``frame``'s controller signatures fail against the AID's accepted key state.
+
+    keripy escrows a partially *signed* event but simply drops one whose signature does not
+    verify, so no escrow attributes a forged signature and the audit has to ask directly. The
+    question is asked with keripy's own ``verifySigs`` and the Kever's own threshold, against the
+    key state the next event must satisfy. A rotation carries its own new keys and is out of
+    scope here; it falls through to the residue code rather than being guessed at.
+    """
+    if not (frame.is_kel and frame.sigers):
+        return False
+    if frame.principal not in scratch.hby.kevers:
+        return False
+    kever = scratch.hby.kevers[frame.principal]
+    _, indices = keventing.verifySigs(
+        raw=frame.serder.raw, sigers=list(frame.sigers), verfers=kever.verfers
+    )
+    return not kever.tholder.satisfy(indices)
+
+
+def attribute(scratch: Scratch, frame: Frame):
+    """The error a single unaccounted frame earns, read off the scratch database's escrows."""
+    for name, code in _ATTRIBUTION:
+        if frame.said in scratch.escrow_saids(name):
+            return code(frame=frame.said)
+    if _signature_fails(scratch, frame):
+        return errors.STREAM_SIG_INVALID(frame=frame.said)
+    return errors.STREAM_FRAME_REJECTED(frame=frame.said)
+
+
+def audit(scratch: Scratch, did, walked: Walk) -> None:
+    """Raise the error the accounting and escrow audits attribute, if the stream earns one.
+
+    Precedence is the brief's: the fork verdict outranks the per-frame proof leaves, because a
+    submission that forks its own KEL is not a stream with one bad frame in it.
+    """
+    conflicts = duplicitous(scratch, walked)
+    if conflicts:
+        raise errors.KEL_FORKED(aid=did.aid)
+    for frame in account_frames(scratch, walked):
+        raise attribute(scratch, frame)
