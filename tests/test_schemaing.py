@@ -53,18 +53,18 @@ def test_a_one_byte_mutation_of_the_schema_body_is_refused(monkeypatch):
     monkeypatch.setattr(schemaing, "read_designated_aliases_schema", lambda: sed)
     with pytest.raises(BakoboError) as excinfo:
         schemaing.load_designated_aliases_schema()
-    assert excinfo.value.code == "e.self.unknown.f"
+    assert excinfo.value.code == "e.self.corrupt.schema.f"
 
 
 def test_the_refusal_names_the_computed_and_expected_saids():
-    """`e.self.unknown.f` declares no args, so the diagnostic rides on the chained cause."""
+    """The rendered detail carries both SAIDs through the code's declared args."""
     sed = schemaing.read_designated_aliases_schema()
     sed["description"] = "tampered"
     with pytest.raises(BakoboError) as excinfo:
         schemaing.verified_schemer(sed)
-    cause = str(excinfo.value.__cause__)
-    assert PINNED_SAID in cause
-    assert scheming.Schemer(sed=copy.deepcopy(sed)).said in cause
+    rendered = str(excinfo.value)
+    assert PINNED_SAID in rendered
+    assert scheming.Schemer(sed=copy.deepcopy(sed)).said in rendered
 
 
 def test_the_bundled_rules_resource_carries_the_four_required_clauses():

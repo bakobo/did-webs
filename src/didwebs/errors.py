@@ -176,6 +176,16 @@ THRESHOLD_UNSUPPORTED = ErrorCode(
     hint="Simplify to a single weighted clause, or wait for a follow-on release.",
 )
 
+SCHEMA_CORRUPT = ErrorCode(
+    "e.self.corrupt.schema.f",
+    "The bundled credential schema does not hash to its pinned identifier.",
+    detail="The designated-aliases schema shipped with this build hashes to {computed}, not "
+    "the pinned {pinned}; the resource has been altered.",
+    args=("computed", "pinned"),
+    hint="Reinstall didwebs from a trusted distribution; this failure is in the package, not "
+    "in your submission.",
+)
+
 UNKNOWN_FAILURE = ErrorCode(
     "e.self.unknown.f",
     "An internal failure occurred that could not be attributed to a specific cause.",

@@ -28,7 +28,6 @@ from __future__ import annotations
 import json
 from importlib import resources
 
-from keri import kering
 from keri.app import habbing
 from keri.core import scheming
 
@@ -68,18 +67,14 @@ def verified_schemer(sed: dict) -> scheming.Schemer:
     """Return a ``Schemer`` over ``sed``, refusing anything but the pinned schema.
 
     Raises:
-        BakoboError: ``e.self.unknown.f`` when the recomputed SAID is not the pinned one. That
-            code declares no arguments, so the two SAIDs ride on a chained
-            ``kering.ConfigurationError`` cause rather than in the rendered detail — the code
-            is the contract, the cause is the diagnostic.
+        BakoboError: ``e.self.corrupt.schema.f`` when the recomputed SAID is not the pinned
+            one — our packaging fault, never the submitter's.
     """
     schemer = scheming.Schemer(sed=sed)
     if schemer.said != DES_ALIASES_SCHEMA_SAID:
-        cause = kering.ConfigurationError(
-            f"The bundled designated-aliases schema hashes to {schemer.said}, not the pinned "
-            f"{DES_ALIASES_SCHEMA_SAID}; the resource has been altered."
+        raise errors.SCHEMA_CORRUPT(
+            computed=schemer.said, pinned=DES_ALIASES_SCHEMA_SAID
         )
-        raise errors.UNKNOWN_FAILURE() from cause
     return schemer
 
 
