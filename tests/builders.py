@@ -112,6 +112,58 @@ def base(tmp_path) -> Fixture:
         )
 
 
+def endpoints(tmp_path) -> Fixture:
+    """The base stream plus the reply records a mailbox and an agent service project from.
+
+    Four ``rpy`` frames, in the order the reference emits and a resolver needs them: each
+    endpoint provider declares its own URL with a ``/loc/scheme`` reply (a location scheme is
+    signed by the provider, not by the controller), and the controller then authorizes each
+    provider in its role with ``/end/role/add``. Together those are the two data sets the spec's
+    ``#### Mailbox Service Endpoint`` and ``#### Agent Service Endpoint`` require.
+
+    **No witness**, deliberately. A witness service needs the witness in the KEL's ``b`` field,
+    and an AID with a witness cannot be built in process here: keripy refuses ``toad=0`` with a
+    non-empty witness list, and with any real threshold ``assemble.issue_aliases`` never returns
+    — the Registrar waits for witness receipts on its anchoring interaction events, which only a
+    receipting Doist would produce (worker E probes E1/E2, 2026-08-15). Witness projection is
+    exercised against planted location/key state in ``tests/test_document.py`` instead.
+    """
+    with keri_api.scratch("endpoints", tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        mailbox = keri_api.make_hab(
+            hby, "mailbox", transferable=False, salt=keri_api.salt(keri_api.MAILBOX_SALT)
+        )
+        agent = keri_api.make_hab(
+            hby, "agent", transferable=False, salt=keri_api.salt(keri_api.AGENT_SALT)
+        )
+        ids = keri_api.designated_ids(hab.pre)
+        issued = _issue(hab, regery, ids)
+
+        replies = keri_api.endpoint_replies(
+            hab,
+            [
+                (mailbox, keri_api.MAILBOX_ROLE, keri_api.MAILBOX_URL),
+                (agent, keri_api.AGENT_ROLE, keri_api.AGENT_URL),
+            ],
+        )
+        stream = keri_api.publication_stream(hab, regery, issued.creder, replies=replies)
+        return Fixture(
+            stream,
+            _facts(
+                "endpoints",
+                hab.pre,
+                acdc_said=issued.creder.said,
+                regk=issued.registry.regk,
+                ids=ids,
+                kel_sn=hab.kever.sner.num,
+                mailbox_aid=mailbox.pre,
+                agent_aid=agent.pre,
+                mailbox_url=keri_api.MAILBOX_URL,
+                agent_url=keri_api.AGENT_URL,
+            ),
+        )
+
+
 # ------------------------------------------------------------------- absence and revocation
 
 
@@ -587,4 +639,5 @@ KNOBS = {
     "truncated": truncated,
     "deactivated": deactivated,
     "alias_foreign_aid": alias_foreign_aid,
+    "endpoints": endpoints,
 }

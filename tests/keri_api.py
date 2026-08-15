@@ -56,6 +56,16 @@ ATTACKER_SALT = b"didwebs-attacker"
 THIRD_PARTY_SALT = b"didwebs-3rdparty"
 DELEGATOR_SALT = b"didwebs-delegatr"
 FOREIGN_SALT = b"didwebs-foreigna"
+MAILBOX_SALT = b"didwebs-mailboxx"
+AGENT_SALT = b"didwebs-agentaid"
+
+#: Endpoint roles a did:webs document projects a service for, and the URLs the fixtures declare
+#: (spec ``#### Mailbox Service Endpoint`` / ``#### Agent Service Endpoint``). No DNS lookup and
+#: no connection ever happens; these are values in signed reply records.
+MAILBOX_ROLE = kering.Roles.mailbox
+AGENT_ROLE = kering.Roles.agent
+MAILBOX_URL = "http://mailbox.example.com:5635/"
+AGENT_URL = "http://agent.example.com:5636/"
 
 #: Fixed registry nonce. ``keri.vdr.eventing.incept`` defaults ``nonce`` to a fresh random
 #: ``Salter().qb64``, so a registry's identifier — and therefore the ACDC SAID that references
@@ -184,15 +194,37 @@ def registry_id(creder) -> str:
     return creder.regid
 
 
-def publication_stream(hab, regery, creder=None, *, with_delegator: bool = True) -> bytes:
-    """Assemble a did:webs publication stream: KEL, then registry TEL, credential TEL, ACDC.
+def endpoint_replies(hab, providers) -> bytes:
+    """The reply records that establish ``providers`` as endpoints of ``hab``.
+
+    Each provider is a ``(provider_hab, role, url)`` triple. Every location scheme is signed by
+    the provider itself — a ``/loc/scheme`` reply says "this is where *I* am", so only the
+    provider's own key can make it — and every ``/end/role/add`` is signed by the controller,
+    which is what authorizes that provider in that role. All location schemes come first, then
+    all role authorizations, so a consuming stream reads the way the reference emits.
+    """
+    msgs = bytearray()
+    for provider, _role, url in providers:
+        msgs.extend(provider.makeLocScheme(url=url, scheme="http", version=V1, gvrsn=V1))
+    for provider, role, _url in providers:
+        msgs.extend(hab.makeEndRole(eid=provider.pre, role=role, version=V1, gvrsn=V1))
+    return bytes(msgs)
+
+
+def publication_stream(
+    hab, regery, creder=None, *, with_delegator: bool = True, replies: bytes = b""
+) -> bytes:
+    """Assemble a did:webs publication stream: KEL, replies, then registry TEL, credential TEL,
+    ACDC.
 
     This is the order ``dws/core/artifacting.py`` emits and the order the GLEIF resolver
-    re-ingests, as the interop spike confirmed end to end. No ``rpy`` records are emitted:
+    re-ingests, as the interop spike confirmed end to end. ``replies`` is empty by default:
     phase-1 fixtures have no witnesses and no endpoint roles, so the reference recipe's
-    ``/loc/scheme`` and ``/end/role`` replies have nothing to describe.
+    ``/loc/scheme`` and ``/end/role`` replies have nothing to describe unless a fixture
+    (``builders.endpoints``) supplies them.
     """
     stream = bytearray(kel_bytes(hab, with_delegator=with_delegator))
+    stream.extend(replies)
     if creder is not None:
         stream.extend(tel_bytes(regery, registry_id(creder)))
         stream.extend(tel_bytes(regery, creder.said))

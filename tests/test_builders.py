@@ -331,6 +331,59 @@ def test_the_truncated_stream_does_not_reach_the_key_state_the_base_one_does(tmp
     assert observed["saved_credentials"] == set()
 
 
+# ------------------------------------------------------------------- endpoints (document E)
+
+
+def test_endpoints_carries_a_reply_record_for_every_endpoint_it_claims(tmp_path):
+    """Four replies: a location scheme for the mailbox and for the agent, and the two
+    ``/end/role/add`` authorizations that make those AIDs this controller's mailbox and agent."""
+    stream, facts = builders.endpoints(tmp_path)
+    replies = [body for body in keri_api.bodies(stream) if body.get("t") == "rpy"]
+
+    assert [body["r"] for body in replies] == [
+        "/loc/scheme",
+        "/loc/scheme",
+        "/end/role/add",
+        "/end/role/add",
+    ]
+    assert [body["a"]["eid"] for body in replies] == [
+        facts["mailbox_aid"],
+        facts["agent_aid"],
+        facts["mailbox_aid"],
+        facts["agent_aid"],
+    ]
+    assert [body["a"]["role"] for body in replies[2:]] == ["mailbox", "agent"]
+    assert {body["a"]["cid"] for body in replies[2:]} == {facts["aid"]}
+
+
+def test_endpoints_declares_the_urls_a_document_oracle_projects(tmp_path):
+    stream, facts = builders.endpoints(tmp_path)
+    urls = {
+        body["a"]["eid"]: (body["a"]["scheme"], body["a"]["url"])
+        for body in keri_api.bodies(stream)
+        if body.get("r") == "/loc/scheme"
+    }
+    assert urls[facts["mailbox_aid"]] == ("http", facts["mailbox_url"])
+    assert urls[facts["agent_aid"]] == ("http", facts["agent_url"])
+
+
+def test_endpoints_is_otherwise_the_base_stream_and_still_publishable(tmp_path):
+    """The knob adds replies and changes nothing else: same complete KEL, TEL and ACDC."""
+    stream, facts = builders.endpoints(tmp_path)
+    assert ilks(stream) == ["icp", "ixn", "ixn", "rpy", "rpy", "rpy", "rpy", "vcp", "iss"]
+    assert set(facts["ids"]) == {facts["did_web"], facts["did_webs"]}
+    assert facts["acdc_said"] and facts["regk"]
+
+
+def test_endpoints_names_no_witness_because_none_can_be_built_in_process(tmp_path):
+    """The witness leg is deliberately absent (worker E, 2026-08-15): an AID with a witness
+    needs receipts on every event, and ``assemble.issue_aliases`` blocks forever waiting for
+    them without a receipting Doist. Witness projection is unit-tested on planted state
+    instead, and this assertion records that the fixture does not pretend otherwise."""
+    stream, _ = builders.endpoints(tmp_path)
+    assert keri_api.bodies(stream)[0]["b"] == []
+
+
 # --------------------------------------------------------------------- toolkit-wide oracles
 
 
@@ -355,6 +408,7 @@ def test_the_knob_registry_covers_every_name_the_brief_names():
         "truncated",
         "deactivated",
         "alias_foreign_aid",
+        "endpoints",
     }
 
 
