@@ -145,6 +145,14 @@ def test_tampered_sig_differs_from_its_parent_by_one_byte_inside_a_signature(tmp
     index = differing[0]
     frame = next(f for f in keri_api.frames(parent) if f.start <= index < f.end)
     assert frame.body_end <= index < frame.end  # in the attachments, not the body
+    # Inside the siger itself, not merely inside the attachment group: an attachment block
+    # also carries unsigned material (a FirstSeenReplayCouple datetime) whose mutation keripy
+    # ignores, which is exactly the vacuity worker D caught (report 2026-08-15).
+    attachments = parent[frame.body_end : frame.end]
+    counter = attachments.find(b"-AAB")
+    assert counter != -1  # one indexed controller signature on the icp
+    siger_start = frame.body_end + counter + 4
+    assert siger_start <= index < siger_start + 88  # within the 88-char qb64 siger
     assert index == facts["tampered_offset"]
     assert keri_api.bodies(stream) == keri_api.bodies(parent)  # bodies untouched
 
@@ -382,3 +390,16 @@ def test_every_builder_names_itself_and_the_did_it_is_a_fixture_for(knob, tmp_pa
     assert facts["did_webs"].endswith(facts["aid"])
     assert facts["did_web"].endswith(facts["aid"])
     assert stream.startswith(b'{"v":"KERI10JSON')  # every stream opens on a v1 JSON inception
+
+
+def test_building_a_fixture_leaves_no_keri_temp_directory(tmp_path):
+    """keripy ignores ``headDirPath`` for temp stores (hio ``Filer.remake`` substitutes its own
+    ``mkdtemp``) and its close removes only the leaf, so every keystore build would otherwise
+    strand four ``/tmp/keri_*`` roots — hundreds per suite run, and a noise floor under any
+    global no-leak assertion (worker D's finding, 2026-08-15). ``keri_api.scratch`` owns the
+    removal."""
+    import glob
+
+    before = set(glob.glob("/tmp/keri_*"))
+    builders.KNOBS["base"](tmp_path)
+    assert set(glob.glob("/tmp/keri_*")) == before

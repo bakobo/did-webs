@@ -280,8 +280,19 @@ def tampered_sig(tmp_path) -> Fixture:
     thing that can fail.
     """
     stream, facts = base(tmp_path)
-    frame = keri_api.frames(stream)[0]
-    offset = frame.end - 1  # last byte of the icp's indexed-signature group
+    # The SECOND frame, not the icp: a forged inception leaves no accepted key state to
+    # attribute against (the AID never reaches the kevers), so only a non-inceptive frame's
+    # tamper exercises the signature attribution rather than the frame fallback.
+    frame = keri_api.frames(stream)[1]
+    # Locate the frame's indexed controller signature: the `-AAB` counter opens a group holding
+    # one 88-char qb64 siger. frame.end - 1 would land on the trailing FirstSeenReplayCouple
+    # datetime, which nothing signs and keripy ignores (worker D's finding, 2026-08-15) — the
+    # byte must lie inside the siger for the signature check to be the only thing that fails.
+    attachments = stream[frame.body_end : frame.end]
+    counter = attachments.find(b"-AAB")
+    if counter == -1:  # pragma: no cover - guards fixture integrity, never taken on a valid base
+        raise AssertionError("base stream's second frame carries no -AAB signature group")
+    offset = frame.body_end + counter + 4 + 44  # mid-siger, clear of the derivation code
     original = stream[offset : offset + 1]
     replacement = b"B" if original != b"B" else b"C"
 

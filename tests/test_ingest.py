@@ -566,30 +566,24 @@ def test_a_forged_controller_signature_is_attributed_to_the_signature(tmp_path):
     assert caught.value.code == "e.proof.stream.sig.f"
 
 
-def test_the_tampered_sig_fixture_does_not_tamper_a_signature(tmp_path):
-    """A defect record against ``builders.tampered_sig`` (STOP-and-report, brief §2).
+def test_the_tampered_sig_fixture_tampers_inside_a_verifiable_signature(tmp_path):
+    """The fixture's derangement reaches the signature check, end to end.
 
-    The knob mutates ``frame.end - 1``. On a replayed KEL a frame's attachments end with the
-    first-seen replay couple, so that offset is the last byte of a datetime, not of a signature —
-    and the datetime is not covered by any signature, so the stream ingests cleanly. The knob's
-    own test (``tests/test_builders.py``) asserts only that the byte lies in the attachments, so
-    it passes while its name and the module docstring both claim "inside a signature".
-
-    Delete this test and point the signature oracle back at the knob once it is fixed.
+    Fixed 2026-08-15 after worker D proved the original offset landed on the unsigned
+    first-seen replay-couple datetime and the stream ingested cleanly; the knob now tampers a
+    siger byte on a non-inceptive frame, and the matrix row asserts the exact code. This test
+    keeps the sharper claim: the tampered byte sits inside a signature the walk itself locates.
     """
-    stream, facts = fixture("tampered_sig", tmp_path)
+    _stream, facts = fixture("tampered_sig", tmp_path)
     parent = facts["parent_stream"]
     walked = ingest.walk(parent)
     signatures = [siger.qb64 for frame in walked.frames for siger in frame.sigers]
     at = facts["tampered_offset"]
 
-    assert not any(
+    assert any(
         parent.index(sig.encode()) <= at < parent.index(sig.encode()) + len(sig)
         for sig in signatures
     )
-    with loaded(stream) as scratch:
-        assert ingest.account_frames(scratch, ingest.walk(stream)) == ()
-        assert ingest.audit(scratch, claimed(facts), ingest.walk(stream)) is None
 
 
 def test_attribution_of_an_unaccounted_transaction_event_falls_through_to_the_frame(tmp_path):
@@ -922,6 +916,7 @@ REJECTIONS = [
     ("revoked_acdc", "e.state.revoked.alias-acdc.f"),
     ("attacker_acdc", "e.grant.missing.alias.f"),
     ("scope_miss", "e.grant.scope.alias.f"),
+    ("tampered_sig", "e.proof.stream.sig.f"),
     ("forked_kel", "e.state.conflict.kel.f"),
     ("dropped_frame_candidate", "e.proof.stream.frame.f"),
     ("third_party", "e.proof.stream.frame.f"),
