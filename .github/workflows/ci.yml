@@ -31,3 +31,50 @@ jobs:
 
       - name: Run tests (100% branch coverage gate)
         run: uv run pytest
+
+  # Brief F, design.md "Test strategy 1" / "CI": the cross-implementation oracle. Deliberately a
+  # SEPARATE job, never folded into `test` above (which stays untouched): it needs a second,
+  # older Python (the GLEIF resolver's `keri>=1.2.13,<1.3` pin declares `Python<3.14`, which can
+  # never share an interpreter with this project's `keri` 2.0.0-dev6 estate pin, `Python>=3.14`
+  # -- see tests/crossimpl/resolver_venv.py), and it drives a subprocess, so it never belongs
+  # inside the coverage-gated suite above. `DIDWEBS_CROSSIMPL=required` is what makes a missing
+  # or broken resolver venv a job FAILURE rather than a silent skip (ledger #22) -- the whole
+  # point of running this in CI at all.
+  crossimpl:
+    runs-on: ubuntu-latest
+    # OPS forward form (brief F §6): "fail loudly and cheaply" -- an outer backstop above the
+    # resolver subprocess's own 60s-per-call timeout (tests/crossimpl/runner.py).
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      # Both interpreters, explicitly: 3.14 for didwebs itself (`uv sync` below), 3.13 for the
+      # resolver venv `tests/crossimpl/resolver_venv.py` provisions. uv manages both toolchains
+      # itself -- no system Python of either version is assumed to be on the runner already.
+      - name: Install Python 3.14 and 3.13
+        run: uv python install 3.14 3.13
+
+      - name: Sync didwebs dependencies
+        run: uv sync
+
+      # OPS forward form: "cache the venv". Keyed on the provisioning script's own contents, so
+      # a pin bump (or any other change to resolver_venv.py) invalidates the cache automatically
+      # rather than needing the key kept in sync with the pin by hand.
+      - name: Cache the GLEIF resolver venv
+        uses: actions/cache@v6
+        with:
+          path: tests/crossimpl/.venv
+          key: resolver-venv-${{ runner.os }}-${{ hashFiles('tests/crossimpl/resolver_venv.py') }}
+
+      - name: Provision the GLEIF resolver venv (Python 3.13, cached above on a hit)
+        run: nice -n 19 uv run python tests/crossimpl/resolver_venv.py provision
+
+      - name: Run the cross-implementation oracle (never skips)
+        env:
+          DIDWEBS_CROSSIMPL: required
+        run: nice -n 19 uv run pytest tests/test_crossimpl.py --no-cov -q
