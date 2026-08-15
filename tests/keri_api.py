@@ -43,10 +43,42 @@ V1 = Vrsn_1_0
 #: Version strings a didwebs publication stream is allowed to contain (design §Test strategy 3).
 ACCEPTED_VERSION_STRINGS = frozenset({"KERI10JSON", "ACDC10JSON"})
 
+#: Domain every fixture DID is minted under. No DNS lookup ever happens.
+DOMAIN = "labs.bakobo.com"
+
+#: Fixed 16-byte salt seeds. Salter requires exactly 16 bytes; every one below is 16 characters,
+#: and a fixed seed is what makes a fixture's AIDs identical from run to run.
+CONTROLLER_SALT = b"didwebs-fixtures"
+ATTACKER_SALT = b"didwebs-attacker"
+THIRD_PARTY_SALT = b"didwebs-3rdparty"
+DELEGATOR_SALT = b"didwebs-delegatr"
+FOREIGN_SALT = b"didwebs-foreigna"
+
+#: Fixed registry nonce. ``keri.vdr.eventing.incept`` defaults ``nonce`` to a fresh random
+#: ``Salter().qb64``, so a registry's identifier — and therefore the ACDC SAID that references
+#: it — is different on every run unless the nonce is pinned. Fixtures pin it; the library
+#: does not, because the nonce exists precisely to make two real registries distinct.
+REGISTRY_NONCE = core.Salter(raw=b"didwebs-registry").qb64
+
 
 def salt(raw: bytes) -> str:
     """A deterministic qb64 salt from a fixed 16-byte seed."""
     return core.Salter(raw=raw).qb64
+
+
+def did_web(aid: str, domain: str = DOMAIN, port: str | None = None) -> str:
+    """The did:web form of a did:webs DID, as ``a.ids`` must also carry it."""
+    return f"did:web:{domain}{f'%3a{port}' if port else ''}:{aid}"
+
+
+def did_webs(aid: str, domain: str = DOMAIN, port: str | None = None) -> str:
+    """The did:webs form."""
+    return f"did:webs:{domain}{f'%3a{port}' if port else ''}:{aid}"
+
+
+def designated_ids(aid: str, domain: str = DOMAIN, port: str | None = None) -> list[str]:
+    """Both spellings of one AID's DID — what a well-formed designation covers."""
+    return [did_web(aid, domain, port), did_webs(aid, domain, port)]
 
 
 @contextmanager
@@ -56,6 +88,17 @@ def open_keystore(name: str, tmp_path, *, salt_raw: bytes):
         name=name, salt=salt(salt_raw), temp=True, headDirPath=str(tmp_path)
     ) as hby:
         yield hby
+
+
+@contextmanager
+def scratch(name: str, tmp_path, *, salt_raw: bytes = CONTROLLER_SALT):
+    """Yield ``(hby, regery)`` for a scratch keystore; both are closed on exit."""
+    with open_keystore(name, tmp_path, salt_raw=salt_raw) as hby:
+        regery = open_regery(hby)
+        try:
+            yield hby, regery
+        finally:
+            regery.close()
 
 
 def make_hab(hby: habbing.Habery, name: str, **kwa) -> habbing.Hab:

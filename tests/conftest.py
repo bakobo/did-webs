@@ -16,12 +16,15 @@ import keri_api
 import pytest
 from keri.app import habbing
 from keri.vdr import credentialing
+from keri_api import (
+    CONTROLLER_SALT,
+    DOMAIN,
+    designated_ids,
+    did_web,
+    did_webs,
+)
 
-#: Domain every fixture DID is minted under. No DNS lookup ever happens.
-DOMAIN = "labs.bakobo.com"
-
-#: Fixed 16-byte salt seed for the primary controller in single-AID fixtures.
-CONTROLLER_SALT = b"didwebs-fixtures"
+__all__ = ["CONTROLLER_SALT", "DOMAIN", "designated_ids", "did_web", "did_webs", "keystore"]
 
 
 @dataclass(frozen=True)
@@ -39,17 +42,3 @@ def keystore(tmp_path):
     with keri_api.open_keystore("issuer", tmp_path, salt_raw=CONTROLLER_SALT) as hby:
         hab = keri_api.make_hab(hby, "issuer")
         yield Keystore(hby, hab, keri_api.open_regery(hby))
-
-
-def did_web(aid: str, domain: str = DOMAIN, port: str | None = None) -> str:
-    """The did:web form of a did:webs DID, as ``a.ids`` must also carry it."""
-    return f"did:web:{domain}{f'%3a{port}' if port else ''}:{aid}"
-
-
-def did_webs(aid: str, domain: str = DOMAIN, port: str | None = None) -> str:
-    return f"did:webs:{domain}{f'%3a{port}' if port else ''}:{aid}"
-
-
-def designated_ids(aid: str, domain: str = DOMAIN, port: str | None = None) -> list[str]:
-    """Both spellings of one AID's DID — what a well-formed designation covers."""
-    return [did_web(aid, domain, port), did_webs(aid, domain, port)]
