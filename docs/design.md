@@ -88,17 +88,27 @@ The fork oracle asserts the conflict is detected either way.
      frame not in accepted state → the error attribution map below. Frames about AIDs other
      than the claimed AID, its delegator chain, and issuers of credentials the stream itself
      carries are rejected outright with `e.rule.stream.third-party.f` (no third-party chaff in
-     a publication stream). The credential-issuer admission is deliberate: it is what lets an
-     attacker-issued ACDC reach the issuer-binding post-condition KRT-F1 exists to prove,
-     rather than being rejected a step early for the wrong reason; the residual breadth is
-     harmless because hosted artifacts derive only from the claimed AID's and its delegator's
-     accepted state.
+     a publication stream). The credential-issuer admission is deliberate but PROVISIONAL: it
+     is what lets an attacker-issued ACDC reach the issuer-binding post-condition KRT-F1
+     exists to prove, rather than being rejected a step early for the wrong reason. It is
+     closed again by the **ownership post-condition** (audit step 4, added 2026-08-15 after
+     the retro conformance sweep found the earlier "residual breadth is harmless" claim false
+     in the built code): once authorization succeeds, every accepted frame must belong to the
+     claimed AID's estate — its KEL and delegator chain, its own registries and credentials,
+     replies about it — and any admitted-but-unowned frame rejects the whole submission with
+     `e.rule.stream.third-party.f`. Rejection, not pruning: silently emitting the stream
+     minus the stranger's frames would publish "minus a frame", exactly what SPC-F1 forbids.
+     The invariant this buys: `emit_stream` is a total function of accepted state — every
+     hosted `keri.cesr` re-ingests cleanly through our own `ingest`.
   2. **Escrow audit** (SEC-F2, KRT-F2). After drains, the scratch database's escrows are
-     inspected and mapped to codes: non-empty likely-duplicitous escrow (`ldes`) →
-     `e.state.conflict.kel.f` (intra-stream fork; first-seen-wins is *not* acceptance);
-     partial/out-of-order/unverified escrows non-empty → `e.proof.stream.*` leaves per escrow
-     kind (signature, delegation seal, anchor). This audit — not parser exceptions — is what
-     makes the error taxonomy's distinctions observable.
+     consulted to ATTRIBUTE the frames accounting found unaccounted (an escrow entry can only
+     originate from a submitted frame, so attribution-on-unaccounted and inspect-all are
+     equivalent; the code implements the former): the likely-duplicitous escrow (`ldes`, or
+     the same-sn conflict scan while `~3v45` stands) → `e.state.conflict.kel.f` (intra-stream
+     fork; first-seen-wins is *not* acceptance); the signature/seal/anchor escrows → the
+     `e.proof.stream.*` leaf per kind; out-of-order and partially-witnessed residue falls to
+     `e.proof.stream.frame.f` (the witnessed case is `~6ks5`). This audit — not parser
+     exceptions — is what makes the error taxonomy's distinctions observable.
   3. **Authorization post-conditions** (KRT-F1, SEC-F4). The designated-aliases ACDC must be:
      schema-pinned (SAID `EN6Oh5XSD5_q2Hgu-aqpdfbVepdpYpFlgz6zvJL5b_r5`, bundled resource,
      SAID-recomputed at load — the `dws/core/schemaing.py` pattern); **issued by the claimed
