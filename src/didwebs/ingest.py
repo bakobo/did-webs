@@ -519,7 +519,7 @@ def require_no_third_party(did, walked: Walk) -> None:
 
     for frame in walked.frames:
         if _is_third_party(frame, aids, registries, credentials):
-            raise errors.STREAM_FRAME_REJECTED(frame=frame.said)
+            raise errors.THIRD_PARTY_FRAME(frame=frame.said, principal=frame.principal)
 
 
 # ------------------------------------------------------------------- the accounting audit

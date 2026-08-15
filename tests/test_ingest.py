@@ -405,7 +405,7 @@ def test_a_stranger_kel_in_the_stream_is_rejected(tmp_path):
     with pytest.raises(BakoboError) as caught:
         ingest.require_no_third_party(claimed(facts), walked)
 
-    assert caught.value.code == "e.proof.stream.frame.f"
+    assert caught.value.code == "e.rule.stream.third-party.f"
 
 
 def test_an_attackers_kel_backing_an_acdc_in_the_stream_reaches_the_authorization_check(tmp_path):
@@ -431,7 +431,7 @@ def test_a_transaction_event_about_an_unknown_registry_is_third_party(tmp_path):
     with pytest.raises(BakoboError) as caught:
         ingest.require_no_third_party(claimed(facts), doctored)
 
-    assert caught.value.code == "e.proof.stream.frame.f"
+    assert caught.value.code == "e.rule.stream.third-party.f"
 
 
 def test_the_sweep_lets_a_reply_frame_through_to_the_accounting_audit(tmp_path):
@@ -919,7 +919,7 @@ REJECTIONS = [
     ("tampered_sig", "e.proof.stream.sig.f"),
     ("forked_kel", "e.state.conflict.kel.f"),
     ("dropped_frame_candidate", "e.proof.stream.frame.f"),
-    ("third_party", "e.proof.stream.frame.f"),
+    ("third_party", "e.rule.stream.third-party.f"),
     ("cbor_frame", "e.feature.unsupported.serialization.f"),
     ("v2_frame", "e.input.format.stream.f"),
     ("delegated:no-delegator", "e.input.missing.delegator.f"),

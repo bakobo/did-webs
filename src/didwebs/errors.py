@@ -146,6 +146,20 @@ ALIAS_GRANT_SCOPE = ErrorCode(
     "identifiers.",
 )
 
+THIRD_PARTY_FRAME = ErrorCode(
+    "e.rule.stream.third-party.f",
+    "The stream carries material about identifiers it is not publishing.",
+    detail="The frame {frame} concerns {principal}, which is neither the claimed AID, its "
+    "delegator chain, nor an issuer of a credential the stream itself carries; a publication "
+    "stream may not carry third-party material.",
+    args=("frame", "principal"),
+    hint="Submit only the claimed AID's own key event log, registries, credentials, and "
+    "endorsements.",
+)
+# A rule, not a proof failure: keripy accepts these frames — they verify fine. The norm "no
+# third-party chaff in a publication stream" is didwebs's own (docs/design.md § Modules,
+# ingest step 1), which is exactly what the `rule` descriptor names.
+
 ALIAS_AID_MISMATCH = ErrorCode(
     "e.rule.alias.aid.mismatch.f",
     "An alsoKnownAs entry names a different AID than the stream verifies.",
