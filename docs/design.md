@@ -33,6 +33,16 @@ Ingest success in this design is defined by the **post-parse audit** below, and 
 artifacts are **re-derived from what keripy actually accepted**, never copied from submitted
 bytes (constraint `embuup`).
 
+Two keripy facts discovered building the fixture toolkit (2026-08-15) widen `qbqfst`'s
+reach. First, **the v1 pin has a third call-site category: parsing.** `Parser.parse` carries
+its own CESR genus `version`, defaulting to v2 — a valid v1 stream fed to a v2-genus parser
+yields *nothing*: no exception, no diagnostic, no `kevers` entry. Every parser construction in
+`ingest.py` therefore pins `version=Vrsn_1_0` exactly as event-constructing calls do. Second,
+three keripy call sites (`Registry.issue`, `Registry.revoke`, `Credentialer.create`) accept no
+version argument at all and derive it from the registry's inception; where an explicit pin is
+impossible, the call is wrapped in an assertion guard (`assemble._v1()`) that refuses a non-v1
+serder, and the version-string oracle backstops the whole surface.
+
 ## Modules
 
 - `didwebs/did.py` — the `WebsDid` value type. Parse/compose/validate per the spec's MSI
@@ -170,6 +180,7 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 | `e.rule.alias.aid.mismatch.f` | an `a.ids` entry names a different AID than the stream verifies (spec same-AID constraint) |
 | `e.feature.unsupported.key.alg.f` | non-Ed25519 key in current key state (decision `3woefn`) |
 | `e.feature.unsupported.threshold.f` | multi-clause (conjunctive) `kt` — unrepresentable in `ConditionalProof2022` |
+| `e.self.corrupt.schema.f` | the bundled designated-aliases schema fails SAID recomputation at load — our packaging fault, never the submitter's |
 | `e.self.unknown.f` | unattributable internal failure |
 
 Boundary reasoning follows the standard: what is decidable from the submission alone is
