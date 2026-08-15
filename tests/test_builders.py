@@ -274,6 +274,55 @@ def test_alias_foreign_aid_designates_a_did_whose_final_component_is_another_aid
     assert facts["did_webs"] in acdc["a"]["ids"]  # and the claimed DID is covered
 
 
+# -------------------------------------------------------------------------- ingestability
+
+
+def test_the_base_stream_really_ingests_into_a_fresh_keystore(tmp_path):
+    """The fixture is verifiable, not merely well shaped — the whole toolkit rests on this.
+
+    Drives keripy's own parser over the stream the way the spike harness drove the GLEIF
+    resolver, and checks the same four things it checked: key state, transaction state, the
+    credential saved, and its TEL state issued.
+    """
+    stream, facts = builders.base(tmp_path / "build")
+    observed = keri_api.smoke_ingest(stream, facts["aid"], tmp_path / "ingest")
+
+    assert observed["aid_in_kevers"] is True
+    assert observed["kel_sn"] == facts["kel_sn"]
+    assert facts["regk"] in observed["registries"]
+    assert facts["acdc_said"] in observed["saved_credentials"]
+    assert observed["vc_states"][facts["acdc_said"]] == "iss"
+
+
+def test_the_revoked_stream_ingests_and_reports_revoked_tel_state(tmp_path):
+    """Revocation is only visible by querying the TEL — the credential still saves and verifies."""
+    stream, facts = builders.revoked_acdc(tmp_path / "build")
+    observed = keri_api.smoke_ingest(stream, facts["aid"], tmp_path / "ingest")
+
+    assert facts["acdc_said"] in observed["saved_credentials"]
+    assert observed["vc_states"][facts["acdc_said"]] == "rev"
+
+
+def test_the_deactivated_stream_ingests_as_cleanly_as_the_base_one(tmp_path):
+    """A deactivated AID is publishable: it must reach full key state, not be refused."""
+    stream, facts = builders.deactivated(tmp_path / "build")
+    observed = keri_api.smoke_ingest(stream, facts["aid"], tmp_path / "ingest")
+
+    assert observed["aid_in_kevers"] is True
+    assert observed["kel_sn"] == facts["kel_sn"]
+    assert observed["vc_states"][facts["acdc_said"]] == "iss"
+
+
+def test_the_truncated_stream_does_not_reach_the_key_state_the_base_one_does(tmp_path):
+    """A contrast case, so the smoke oracle is shown to discriminate rather than always pass."""
+    stream, facts = builders.truncated(tmp_path / "build")
+    observed = keri_api.smoke_ingest(stream, facts["aid"], tmp_path / "ingest")
+
+    assert observed["kel_sn"] == 0 < facts["kel_sn"]
+    assert observed["registries"] == set()
+    assert observed["saved_credentials"] == set()
+
+
 # --------------------------------------------------------------------- toolkit-wide oracles
 
 

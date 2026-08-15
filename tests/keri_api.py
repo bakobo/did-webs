@@ -249,6 +249,81 @@ def bodies(stream: bytes) -> list[dict]:
     return [json.loads(frame.body) for frame in frames(stream)]
 
 
+# --------------------------------------------------------------------------- smoke ingest
+
+
+def smoke_ingest(stream: bytes, aid: str, tmp_path, *, name: str = "smoke") -> dict:
+    """Parse a stream into a fresh keystore and report what landed. **Not** the pipeline.
+
+    This is the spike harness's resolver-side oracle (``ingest_stream.py``, itself
+    ``dws.core.resolving.save_cesr``) ported to this keripy line, and it exists for one purpose:
+    to prove a fixture is genuinely ingestable rather than merely well shaped. It does none of
+    the work ``didwebs.ingest`` will do — no frame accounting, no escrow audit, no error
+    attribution, no authorization post-conditions — so it must never be mistaken for, or grow
+    into, the product path.
+
+    Returns a dict of observations: whether the AID reached key state, at what sequence number,
+    whether the registry reached transaction state, whether the ACDC was saved, and the
+    credential's TEL state.
+
+    **The v1 pin extends to parsing, which constraint ``qbqfst`` does not currently say.**
+    ``Parser.parse`` takes its own CESR genus ``version``, defaulting to v2 like every other
+    call site on this line. Without ``version=V1`` a perfectly valid v1 stream parses to
+    *nothing* — no exception, no diagnostic, the AID simply never reaches ``hby.kevers``, which
+    is the same silent-drop failure the spike observed in the opposite direction. Any ingest
+    path built on this keripy line must pin the genus at ``parse`` as well as at ``replay``.
+    """
+    from keri.core import eventing, routing
+    from keri.peer import exchanging
+    from keri.vdr import eventing as teventing
+    from keri.vdr import verifying
+
+    with scratch(name, tmp_path, salt_raw=CONTROLLER_SALT) as (hby, regery):
+        from didwebs import schemaing
+
+        schemaing.pin_designated_aliases_schema(hby)
+
+        router = routing.Router()
+        revery = routing.Revery(db=hby.db, rtr=router)
+        exchanger = exchanging.Exchanger(hby=hby, handlers=[])
+        kevery = eventing.Kevery(db=hby.db, rvy=revery)
+        tevery = teventing.Tevery(db=hby.db, reger=regery.reger)
+        verifier = verifying.Verifier(hby=hby, reger=regery.reger)
+        kevery.registerReplyRoutes(router=router)
+        tevery.registerReplyRoutes(router=router)
+
+        hby.psr.parse(
+            ims=bytearray(stream),
+            kvy=kevery,
+            tvy=tevery,
+            vry=verifier,
+            rvy=revery,
+            exc=exchanger,
+            local=False,
+            version=V1,
+        )
+        kevery.processEscrows()
+        tevery.processEscrows()
+        verifier.processEscrows()
+        revery.processEscrowReply()
+
+        observed = {
+            "aid_in_kevers": aid in hby.kevers,
+            "kel_sn": hby.kevers[aid].sner.num if aid in hby.kevers else None,
+            "registries": set(regery.reger.tevers),
+            "saved_credentials": set(),
+            "vc_states": {},
+        }
+        for keys, _ in regery.reger.saved.getTopItemIter():
+            observed["saved_credentials"].add(keys[0] if isinstance(keys, tuple) else keys)
+        for regk in observed["registries"]:
+            for vci in observed["saved_credentials"]:
+                state = regery.reger.tevers[regk].vcState(vci=vci)
+                if state is not None:
+                    observed["vc_states"][vci] = state.et
+        return observed
+
+
 # ----------------------------------------------------------------------------- delegation
 
 
