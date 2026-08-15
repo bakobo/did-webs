@@ -173,29 +173,23 @@ def test_intersection_agreement(knob, tmp_path, venv_guard):
 
 
 def test_delegated_self_expiry(tmp_path, venv_guard):
-    """tick ~4jke / design.md oracle 1 assert the reference's single escrow-drain pass cannot
-    fully ingest a delegated AID's stream, and brief F §2.3 asks for a test that the reference
-    DOES fail on the `delegated` fixture today, so the exclusion self-expires -- starts
-    failing on its own -- the day GLEIF's `save_cesr` fully accepts one in a single pass.
+    """A regression sensor on the reference's delegated-stream ingestion (closed tick 4jke).
 
-    **That is not what this test observes.** Empirically, against the pinned resolver
+    The tick's premise -- that the reference's single escrow-drain pass cannot fully ingest a
+    delegated AID's stream -- was FALSIFIED here (2026-08-15): Empirically, against the pinned resolver
     (0d4f2fd) and `builders.delegated`'s stream, `save_cesr`'s single ``processEscrows()`` pass
     resolves the delegation cleanly on the first try: ``aid_in_kevers`` is True, ``kever_sn``
     matches ours exactly, and ``generate_did_doc`` returns a document. No escrow round-trip is
     needed for *this* stream shape, because ``keri_api.kel_bytes``/``Hab.replay`` always emit a
     delegate's KEL with the delegator's anchoring events first -- nothing in the stream is
     actually out of order, so the out-of-order/partial-delegation escrow interplay
-    ``didwebs.ingest.Scratch.load``'s docstring describes (and that motivated tick ~4jke) never
+    ``didwebs.ingest.Scratch.load``'s docstring describes (and that motivated the tick) never
     triggers here.
 
-    This test therefore asserts what is actually observed -- a regression oracle on *that*,
-    not a defense of tick ~4jke's premise -- and is a documented tension for the craftsman
-    rather than a silently "fixed" assertion: either tick ~4jke's claim needs re-examination
-    (nothing on record shows it was ever run against the live resolver before this brief), or
-    reproducing the escrow-ordering defect it describes needs a stream that is genuinely out of
-    order, which no fixture in ``tests/builders.py`` currently produces and this brief is not
-    authorized to add (``tests/builders.py`` is a gated path). See this worker's final report,
-    "tensions surfaced rather than resolved".
+    The craftsman closed the tick on this evidence: worker D's fixpoint-drain finding stands
+    for OUR 2.0-dev6 ingest stack, but the 1.2.13 reference needs no such repair for streams
+    we emit, and there is no upstream issue to draft. This test stays as the sensor: if the
+    reference ever stops ingesting our delegated artifacts, it fails.
     """
     stream, facts = builders.delegated(tmp_path)
     did = parse_did(facts["did_webs"])
@@ -206,9 +200,8 @@ def test_delegated_self_expiry(tmp_path, venv_guard):
         emitted, aid=facts["aid"], did=facts["did_webs"], tmp_path=tmp_path / "resolver"
     )
     assert report["verdict"] == "INGESTED", (
-        "the reference no longer cleanly ingests builders.delegated's stream -- if tick ~4jke's "
-        "premise has become true for this fixture shape, this is the sensor for it, not a bug "
-        "here. report:\n" + json.dumps(report, default=str)
+        "the reference no longer cleanly ingests builders.delegated's stream -- this sensor "
+        "exists to catch exactly that change. report:\n" + json.dumps(report, default=str)
     )
     assert report.get("aid_in_kevers") and report.get("kever_sn") == facts["kel_sn"], (
         "the reference's key state for the delegate no longer matches ours after ingest -- "
