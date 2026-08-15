@@ -207,3 +207,18 @@ def test_delegated_self_expiry(tmp_path, venv_guard):
         "the reference's key state for the delegate no longer matches ours after ingest -- "
         "report:\n" + json.dumps(report, default=str)
     )
+
+
+def test_the_resolver_subprocess_strands_no_keri_temp_directory(tmp_path, venv_guard):
+    """keri 1.2.13 has the same leaf-only close as the estate pin, so the resolver subprocess
+    leaves four `/tmp/keri_*` roots per keystore it opens. The runner owns their removal, the
+    way `keri_api.scratch` and `ingest.Scratch` do on our side of the fence."""
+    import glob
+
+    stream, facts = builders.base(tmp_path)
+    did = parse_did(facts["did_webs"])
+    _, emitted = _emit(stream, did)
+
+    before = set(glob.glob("/tmp/keri_*"))
+    runner.run(emitted, aid=facts["aid"], did=facts["did_webs"], tmp_path=tmp_path / "resolver")
+    assert set(glob.glob("/tmp/keri_*")) == before
