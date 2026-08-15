@@ -424,6 +424,38 @@ def third_party(tmp_path) -> Fixture:
     )
 
 
+def stranger_bundle(tmp_path) -> Fixture:
+    """A valid stream with a stranger's whole publication appended — KEL, registry, and ACDC.
+
+    The sharper cousin of :func:`third_party`. That knob appends a bare KEL, which the pre-parse
+    sweep refuses outright. This one appends a registry as well, and a registry inception names
+    its issuer in ``ii``: the sweep admits that AID as "an issuer of a credential the stream
+    itself carries", which is the deliberate, provisional admission that lets an attacker-issued
+    ACDC reach the issuer-binding post-condition. So every frame here is internally perfect —
+    correctly signed, own registry, self-attested credential, keripy accepts all of it — and the
+    claimed AID's own designation is untouched and still authorizes the publication. The only
+    thing wrong is that the submission carries somebody else's estate beside its own, which is
+    what the ownership post-condition (design §Modules, audit step 4) refuses.
+
+    The stranger reuses ``THIRD_PARTY_SALT``, so its AID is the same one ``third_party`` uses and
+    the two knobs name the same outsider.
+    """
+    stream, facts = base(tmp_path / "trunk")
+    with keri_api.scratch(
+        "stranger", tmp_path / "stranger", salt_raw=keri_api.THIRD_PARTY_SALT
+    ) as (hby, regery):
+        stranger = keri_api.make_hab(hby, "stranger")
+        issued = _issue(stranger, regery, keri_api.designated_ids(stranger.pre))
+        appended = stream + keri_api.publication_stream(stranger, regery, issued.creder)
+        extra = {
+            "stranger_aid": stranger.pre,
+            "stranger_regk": issued.registry.regk,
+            "stranger_acdc_said": issued.creder.said,
+        }
+
+    return Fixture(appended, {**facts, "knob": "stranger_bundle", "parent_stream": stream, **extra})
+
+
 def cbor_frame(tmp_path) -> Fixture:
     """A v1 CBOR interaction event on the claimed AID's own KEL.
 
@@ -630,6 +662,7 @@ KNOBS = {
     "forked_kel": forked_kel,
     "dropped_frame_candidate": dropped_frame_candidate,
     "third_party": third_party,
+    "stranger_bundle": stranger_bundle,
     "cbor_frame": cbor_frame,
     "v2_frame": v2_frame,
     "secp_keys": secp_keys,

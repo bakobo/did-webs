@@ -19,6 +19,8 @@ import builders
 import keri_api
 import pytest
 from bakobo.errors import BakoboError
+from keri.core import eventing as keventing
+from keri.kering import Kinds
 
 from didwebs import assemble, ingest
 from didwebs import did as did_module
@@ -485,6 +487,246 @@ def test_a_dropped_frame_is_caught_by_accounting_not_published_around(tmp_path):
     assert caught.value.code == "e.proof.stream.frame.f"
 
 
+# -------------------------------------------- unit 2: the ownership post-condition (step 4)
+
+
+def test_a_valid_publication_stream_is_owned_by_the_aid_it_publishes(tmp_path):
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+
+    with loaded(stream) as scratch:
+        assert ingest.require_ownership(scratch, claimed(facts), walked) is None
+
+
+def test_a_strangers_whole_publication_riding_a_valid_submission_is_rejected(tmp_path):
+    """The defect the ownership post-condition closes (retro sweep, 2026-08-15).
+
+    Every gate before this one passes, and each for a reason it was built to have. The pre-parse
+    sweep admits the stranger's KEL because the stranger's own registry inception names it in
+    ``ii`` — the provisional admission that lets an attacker-issued ACDC reach the issuer check.
+    keripy accepts every frame, so accounting is clean. The claimed AID's own designation is
+    untouched, so authorization succeeds. Ingest therefore *verified* this stream before step 4
+    existed, and ``emit_stream`` would have hosted the stranger's registry, credential TEL and
+    ACDC under Bakobo's domain — without the stranger's KEL, which it does not replay — producing
+    a ``keri.cesr`` our own ingest rejects at ``e.proof.stream.anchor.f``.
+
+    Rejection, not pruning: publishing the submission minus the stranger's frames would host
+    "minus a frame", which is exactly what frame accounting exists to forbid (SPC-F1).
+    """
+    stream, facts = fixture("stranger_bundle", tmp_path)
+    walked = ingest.walk(stream)
+
+    # every earlier gate passes, and the sweep's admission is the vcp's `ii`
+    assert ingest.require_no_third_party(claimed(facts), walked) is None
+    with loaded(stream) as scratch:
+        assert ingest.account_frames(scratch, walked) == ()
+        assert ingest.audit(scratch, claimed(facts), walked) is None
+        assert ingest.authorize(scratch, claimed(facts), walked).said == facts["acdc_said"]
+
+        with pytest.raises(BakoboError) as caught:
+            ingest.require_ownership(scratch, claimed(facts), walked)
+
+    assert caught.value.code == "e.rule.stream.third-party.f"
+    assert caught.value.code_args[1] == facts["stranger_aid"]  # (frame, principal)
+
+
+def test_the_ownership_post_condition_rejects_rather_than_prunes(tmp_path):
+    """The whole submission fails; nothing about the claimed AID reaches an artifact tree."""
+    stream, facts = fixture("stranger_bundle", tmp_path)
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+
+    assert caught.value.code == "e.rule.stream.third-party.f"
+
+
+def test_ownership_is_checked_after_authorization_not_before(tmp_path):
+    """Ordering, asserted rather than assumed. The attacker-ACDC fixture is unowned twice over —
+    the attacker's KEL, registry and credential are all somebody else's — so an ownership check
+    placed before the authorization post-conditions would answer KRT-F1's oracle with the
+    stream-shape code instead of the issuer-binding one, and the sharper verdict would be lost.
+    """
+    stream, facts = fixture("attacker_acdc", tmp_path)
+    walked = ingest.walk(stream)
+
+    with pytest.raises(BakoboError) as caught:
+        ingest.ingest(stream, claimed(facts))
+    assert caught.value.code == "e.grant.missing.alias.f"
+
+    # ownership would have refused it too, and that is the verdict the ordering suppresses
+    with loaded(stream) as scratch, pytest.raises(BakoboError) as ownership:
+        ingest.require_ownership(scratch, claimed(facts), walked)
+    assert ownership.value.code == "e.rule.stream.third-party.f"
+
+
+def test_an_endpoint_providers_location_reply_is_the_claimed_aids_material(tmp_path):
+    """The false-rejection direction, and the one place ownership is not simply "is it mine".
+
+    A ``/loc/scheme`` reply is signed by the endpoint provider — it says "this is where *I* am",
+    so only the provider's own key can make it — and its provider is a nontransferable AID that
+    is not the claimed AID and has no KEL in the stream at all. It belongs to the claimed AID's
+    estate because the claimed AID authorized that provider in a role with ``/end/role/add``,
+    which is precisely the pair of records a mailbox or agent service is projected from. An
+    ownership predicate that asked only "is this frame about the claimed AID" would refuse every
+    stream that declares an endpoint.
+    """
+    stream, facts = fixture("endpoints", tmp_path)
+    walked = ingest.walk(stream)
+    claimed_did = claimed(facts)
+
+    with loaded(stream) as scratch:
+        providers = ingest.endpoint_providers(scratch, walked, {facts["aid"]})
+        assert providers == frozenset({facts["mailbox_aid"], facts["agent_aid"]})
+        assert facts["mailbox_aid"] != facts["aid"]
+        assert ingest.require_ownership(scratch, claimed_did, walked) is None
+
+    with ingest.ingest(stream, claimed_did) as verified:
+        assert len(verified.frames) == len(walked.frames)
+
+
+def replies(scratch, walked, route):
+    """Just the walked reply frames carrying ``route``, read off the accepted reply records."""
+    return tuple(
+        frame
+        for frame in walked.frames
+        if frame.ilk == "rpy"
+        and scratch.hby.db.rpys.get(keys=(frame.said,)).ked["r"].startswith(route)
+    )
+
+
+def test_a_location_reply_from_a_provider_nobody_authorized_is_not_owned(tmp_path):
+    """Drop the two ``/end/role/add`` records and the location schemes stand unclaimed: nothing
+    left in the submission ties those providers to this AID, so they are somebody else's
+    endpoints. The refusal names the endpoint, which is who the frame is actually about — the
+    walk records no principal for a reply, because ``rpy`` messages carry no ``i`` field."""
+    stream, facts = fixture("endpoints", tmp_path)
+    walked = ingest.walk(stream)
+
+    with loaded(stream) as scratch:
+        locations = ingest.Walk(replies(scratch, walked, "/loc/scheme"), None)
+        assert len(locations.frames) == 2
+
+        with pytest.raises(BakoboError) as caught:
+            ingest.require_ownership(scratch, claimed(facts), locations)
+
+    assert caught.value.code == "e.rule.stream.third-party.f"
+    assert caught.value.code_args[1] == facts["mailbox_aid"]
+
+
+def test_a_role_authorization_about_another_controller_is_not_owned(tmp_path):
+    """``/end/role/add`` names the controller it binds in ``cid``; one naming somebody else is
+    that controller's endorsement, not this publication's."""
+    stream, facts = fixture("endpoints", tmp_path)
+    walked = ingest.walk(stream)
+    stranger = did_module.parse(keri_api.did_webs("E" + "A" * 43))
+
+    with loaded(stream) as scratch:
+        roles = ingest.Walk(replies(scratch, walked, "/end/role"), None)
+        assert len(roles.frames) == 2
+        assert ingest.endpoint_providers(scratch, roles, {stranger.aid}) == frozenset()
+
+        with pytest.raises(BakoboError) as caught:
+            ingest.require_ownership(scratch, stranger, roles)
+
+    assert caught.value.code == "e.rule.stream.third-party.f"
+    assert caught.value.code_args[1] == facts["aid"]  # the cid it binds, not the endpoint
+
+
+def test_a_reply_route_this_build_has_no_ownership_rule_for_is_not_owned(tmp_path):
+    """Fail closed (ledger #16): only the two routes a did:webs publication is made of are
+    owned, and a route the predicate cannot place is refused rather than waved through."""
+    stream, facts = fixture("base", tmp_path)
+    reply = keri_api_reply(tmp_path)
+    with_reply = stream + reply
+    walked = ingest.walk(with_reply)
+    rpy = next(frame for frame in walked.frames if frame.ilk == "rpy")
+
+    with loaded(with_reply) as scratch:
+        assert ingest.owns_reply(scratch, rpy, {facts["aid"]}, frozenset())  # its own location
+
+        elsewhere = keventing.reply(
+            route="/ksn", data={"i": facts["aid"]}, pvrsn=keri_api.V1, kind=Kinds.json
+        )
+        scratch.hby.db.rpys.pin(keys=(rpy.said,), val=elsewhere)
+
+        assert not ingest.owns_reply(scratch, rpy, {facts["aid"]}, frozenset())
+
+
+def test_a_reply_frame_with_no_accepted_record_is_not_owned(tmp_path):
+    """Unreachable through :func:`ingest.ingest` — accounting refuses an unaccepted reply first —
+    and guarded anyway, because a predicate that dereferences a missing record fails open."""
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    phantom = walked.frames[0].replace(ilk="rpy", said="E" + "A" * 43)
+
+    with loaded(stream) as scratch:
+        assert not ingest.owns_reply(scratch, phantom, {facts["aid"]}, frozenset())
+
+
+def test_a_credential_this_aid_did_not_issue_is_not_owned(tmp_path):
+    """The ACDC leg on its own: ownership of a credential is its issuer, not its subject."""
+    stream, facts = fixture("stranger_bundle", tmp_path)
+    walked = ingest.walk(stream)
+    theirs = [frame for frame in walked.frames if frame.is_acdc][-1]
+
+    with loaded(stream) as scratch:
+        assert theirs.principal == facts["stranger_aid"]
+        assert not ingest.owned(scratch, claimed(facts), theirs, {facts["aid"]}, frozenset())
+
+
+def test_a_transaction_event_of_a_registry_or_credential_this_aid_does_not_own(tmp_path):
+    """The TEL leg's two shapes. A registry event is placed by its ``Tever.pre``; a credential
+    event's principal is the credential's own SAID, so it is placed by the issuer of the
+    credential keripy saved under it."""
+    stream, facts = fixture("stranger_bundle", tmp_path)
+    walked = ingest.walk(stream)
+    did = claimed(facts)
+    theirs = [
+        frame
+        for frame in walked.frames
+        if frame.is_tel and frame.principal in (facts["stranger_regk"], facts["stranger_acdc_said"])
+    ]
+
+    with loaded(stream) as scratch:
+        assert [frame.ilk for frame in theirs] == ["vcp", "iss"]
+        assert not any(ingest.owned(scratch, did, frame, {did.aid}, frozenset()) for frame in theirs)
+        ours = [f for f in walked.frames if f.is_tel and f not in theirs]
+        assert all(ingest.owned(scratch, did, frame, {did.aid}, frozenset()) for frame in ours)
+
+
+def test_a_transaction_event_for_a_credential_nothing_saved_is_not_owned(tmp_path):
+    """Fail closed on the third TEL shape: neither a known registry nor a saved credential, so
+    there is nothing in accepted state that places the frame in anybody's estate."""
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    orphan = next(f for f in walked.frames if f.ilk == "iss").replace(principal="E" + "C" * 43)
+
+    with loaded(stream) as scratch:
+        assert not ingest.owned(scratch, claimed(facts), orphan, {facts["aid"]}, frozenset())
+
+
+def test_a_message_class_the_ownership_predicate_cannot_place_is_not_owned(tmp_path):
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    exotic = walked.frames[0].replace(ilk="exn")
+
+    with loaded(stream) as scratch:
+        assert not ingest.owned(scratch, claimed(facts), exotic, {facts["aid"]}, frozenset())
+
+
+def test_a_delegators_own_key_events_are_part_of_the_delegates_estate(tmp_path):
+    """The delegator chain is named in the design's own wording for step 4, and a delegated
+    publication cannot verify without it."""
+    stream, facts = fixture("delegated", tmp_path)
+    walked = ingest.walk(stream)
+
+    with loaded(stream) as scratch:
+        assert ingest.require_ownership(scratch, claimed(facts), walked) is None
+        delegator = [f for f in walked.frames if f.principal == facts["delegator_aid"]]
+        assert delegator
+        assert not ingest.owned(scratch, claimed(facts), delegator[0], {facts["aid"]}, frozenset())
+
+
 # ------------------------------------------------------------------ unit 2: the escrow audit
 
 
@@ -920,6 +1162,7 @@ REJECTIONS = [
     ("forked_kel", "e.state.conflict.kel.f"),
     ("dropped_frame_candidate", "e.proof.stream.frame.f"),
     ("third_party", "e.rule.stream.third-party.f"),
+    ("stranger_bundle", "e.rule.stream.third-party.f"),
     ("cbor_frame", "e.feature.unsupported.serialization.f"),
     ("v2_frame", "e.input.format.stream.f"),
     ("delegated:no-delegator", "e.input.missing.delegator.f"),

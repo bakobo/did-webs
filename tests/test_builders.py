@@ -191,6 +191,52 @@ def test_third_party_appends_frames_about_an_unrelated_aid(tmp_path):
     assert ilks(stream).count("icp") == 2
 
 
+def test_stranger_bundle_appends_a_complete_second_publication_nothing_is_wrong_with(tmp_path):
+    """The stranger's whole estate — KEL, registry, credential — every frame internally valid.
+
+    ``third_party`` appends a bare KEL, which the pre-parse sweep turns away. This knob appends
+    a *registry* too, and a registry inception names its issuer in ``ii``: the sweep admits that
+    AID as the issuer of a credential the stream carries, which is the admission the ownership
+    post-condition exists to close again. So the derangement is not that any frame is bad — none
+    is — but that the submission carries somebody else's publication alongside its own.
+    """
+    stream, facts = builders.stranger_bundle(tmp_path)
+    bodies = keri_api.bodies(stream)
+
+    assert facts["stranger_aid"] != facts["aid"]
+    assert ilks(stream) == ["icp", "ixn", "ixn", "vcp", "iss"] * 2
+    assert keri_api.version_strings(stream).count(ACDC_VS) == 2
+
+    stranger_vcp = [b for b in bodies if b.get("t") == "vcp" and b["ii"] == facts["stranger_aid"]]
+    assert [b["i"] for b in stranger_vcp] == [facts["stranger_regk"]]
+
+    acdcs = [
+        json.loads(frame.body)
+        for frame in keri_api.frames(stream)
+        if frame.version_string == ACDC_VS
+    ]
+    ours, theirs = acdcs
+    assert ours["i"] == facts["aid"] and facts["did_webs"] in ours["a"]["ids"]
+    assert theirs["i"] == facts["stranger_aid"]
+    assert theirs["ri"] == facts["stranger_regk"]
+    assert theirs["d"] == facts["stranger_acdc_said"]
+    assert facts["did_webs"] not in theirs["a"]["ids"]  # the stranger designates only itself
+
+
+def test_stranger_bundle_is_a_stream_keripy_accepts_in_full(tmp_path):
+    """Accepted-shape, proved rather than asserted: both registries reach transaction state and
+    both credentials save as issued. A fixture whose stranger frames keripy rejected would let
+    the ownership oracle pass for the wrong reason — accounting would catch it a step early."""
+    stream, facts = builders.stranger_bundle(tmp_path / "build")
+    observed = keri_api.smoke_ingest(stream, facts["aid"], tmp_path / "ingest")
+
+    assert observed["aid_in_kevers"] is True
+    assert observed["registries"] == {facts["regk"], facts["stranger_regk"]}
+    assert observed["saved_credentials"] == {facts["acdc_said"], facts["stranger_acdc_said"]}
+    assert observed["vc_states"][facts["acdc_said"]] == "iss"
+    assert observed["vc_states"][facts["stranger_acdc_said"]] == "iss"
+
+
 def test_cbor_frame_is_a_v1_cbor_event_on_the_claimed_aids_own_kel(tmp_path):
     """Serialization is the *only* thing wrong: same AID, same protocol version, valid signature."""
     stream, facts = builders.cbor_frame(tmp_path)
@@ -399,6 +445,7 @@ def test_the_knob_registry_covers_every_name_the_brief_names():
         "forked_kel",
         "dropped_frame_candidate",
         "third_party",
+        "stranger_bundle",
         "cbor_frame",
         "v2_frame",
         "secp_keys",

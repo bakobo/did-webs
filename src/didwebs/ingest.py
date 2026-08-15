@@ -20,6 +20,10 @@ are re-derived from that accepted state rather than copied from submitted bytes 
    in accepted state, and :func:`attribute` maps any that is not to an error code by reading the
    scratch database's escrows.
 3. :func:`authorize` — *the authorization post-conditions* on the designated-aliases ACDC.
+4. :func:`require_ownership` — *the ownership post-condition*: once the publication is
+   authorized, every accepted frame must belong to the claimed AID's estate. This is what makes
+   :func:`~didwebs.assemble.emit_stream` a total function of accepted state, so that every
+   hosted ``keri.cesr`` re-ingests cleanly through this same pipeline.
 
 **The v1 pin extends to parsing** (constraint ``qbqfst``, design §Shape). ``Parser`` carries its
 own CESR genus version, defaulting to v2, and a valid v1 stream fed to a v2-genus parser yields
@@ -63,10 +67,14 @@ __all__ = [
     "audit",
     "delegators",
     "duplicitous",
+    "endpoint_providers",
     "ingest",
     "open_scratch",
+    "owned",
+    "owns_reply",
     "require_delegator",
     "require_no_third_party",
+    "require_ownership",
     "require_supported",
     "walk",
 ]
@@ -90,6 +98,15 @@ TEL_ILKS = frozenset({"vcp", "vrt", "iss", "rev", "bis", "brv"})
 
 #: Registry inception. Its ``ii`` field names the AID whose KEL must anchor the registry.
 REGISTRY_INCEPTION = "vcp"
+
+#: A signed assertion about somebody's key state, endpoints or credentials.
+REPLY = "rpy"
+
+#: The two reply routes a did:webs publication is made of (spec ``#### Mailbox Service
+#: Endpoint`` / ``#### Agent Service Endpoint``). ``/end/role`` names the controller it binds in
+#: ``a.cid``; ``/loc/scheme`` names the endpoint that declares its own URL in ``a.eid``.
+END_ROLE = "/end/role"
+LOC_SCHEME = "/loc/scheme"
 
 
 @dataclass(frozen=True)
@@ -723,6 +740,134 @@ def authorize(scratch: Scratch, did, walked: Walk):
     return creder
 
 
+# ------------------------------------------------- the ownership post-condition (step 4)
+
+
+def endpoint_providers(scratch: Scratch, walked: Walk, aids) -> frozenset[str]:
+    """The AIDs ``aids`` authorized in an endpoint role, read from accepted reply records.
+
+    An ``/end/role/add`` reply is signed by the controller and names the provider it authorizes
+    in ``a.eid``; that authorization is what makes the provider's own ``/loc/scheme`` reply part
+    of this publication rather than somebody else's endpoint advertisement.
+    """
+    providers = set()
+    for frame in walked.frames:
+        record = _reply_record(scratch, frame)
+        if record is None:
+            continue
+        attributes = record.ked["a"]
+        if record.ked["r"].startswith(END_ROLE) and attributes.get("cid") in aids:
+            providers.add(attributes.get("eid"))
+    return frozenset(providers)
+
+
+def _reply_record(scratch: Scratch, frame: Frame):
+    """The reply keripy accepted for ``frame``, or None — accepted state, never submitted bytes."""
+    if frame.ilk != REPLY:
+        return None
+    return scratch.hby.db.rpys.get(keys=(frame.said,))
+
+
+def owns_reply(scratch: Scratch, frame: Frame, aids, providers) -> bool:
+    """Whether an accepted reply record is the estate's own (design §Modules, audit step 4).
+
+    Two routes, and only two. A ``/end/role`` reply belongs to the controller it names in
+    ``a.cid``. A ``/loc/scheme`` reply is signed by the *endpoint*, not by the controller — it
+    says "this is where I am", so only the endpoint's own key can make it — and it belongs to
+    this publication when the endpoint is one the estate authorized in a role, or is a member of
+    the estate declaring its own location. Any other route fails closed: the predicate has no
+    rule that places it, so it is not this publication's to host (ledger #16).
+    """
+    record = _reply_record(scratch, frame)
+    if record is None:
+        return False
+    attributes = record.ked["a"]
+    if record.ked["r"].startswith(END_ROLE):
+        return attributes.get("cid") in aids
+    if record.ked["r"].startswith(LOC_SCHEME):
+        return attributes.get("eid") in aids or attributes.get("eid") in providers
+    return False
+
+
+def _subject(scratch: Scratch, frame: Frame) -> str:
+    """Whom an unowned frame is about, for the refusal's own account of it.
+
+    The walk records a reply's principal as None — keripy's ``rpy`` messages carry no ``i`` field
+    — so a reply names its subject from the accepted record instead: the controller it binds
+    (``a.cid``) for a role authorization, the endpoint it locates (``a.eid``) for a location
+    scheme.
+    """
+    record = _reply_record(scratch, frame)
+    if record is None:
+        return frame.principal
+    attributes = record.ked["a"]
+    return attributes.get("cid") or attributes.get("eid")
+
+
+def owned(scratch: Scratch, did, frame: Frame, aids, providers) -> bool:
+    """Whether one accepted frame belongs to the claimed AID's estate.
+
+    Placed entirely from **accepted state** plus the walk's own account of what each frame is —
+    never from the submitted bytes, which the audit has already finished with. By message class:
+
+    * a key event belongs to the estate when its AID is the claimed one or in its delegator chain;
+    * a credential belongs to its issuer, which must be the claimed AID — its *subject* is
+      irrelevant, which is the whole of KRT-F1 restated as a hosting rule;
+    * a transaction event's principal is a registry or a credential identifier, so a registry
+      event is placed by its ``Tever.pre`` and a credential event by the issuer of the credential
+      keripy saved under that identifier;
+    * a reply is placed by :func:`owns_reply`.
+
+    Anything else fails closed. This runs on frames the accounting audit already accepted, so an
+    unplaceable frame is a class this build has no hosting rule for, not a malformed one.
+    """
+    if frame.is_kel:
+        return frame.principal in aids
+    if frame.is_acdc:
+        return frame.principal == did.aid
+    if frame.is_tel:
+        tever = scratch.regery.reger.tevers.get(frame.principal)
+        if tever is not None:
+            return tever.pre == did.aid
+        creder = scratch.regery.reger.creds.get(keys=(frame.principal,))
+        return creder is not None and creder.israid == did.aid
+    if frame.ilk == REPLY:
+        return owns_reply(scratch, frame, aids, providers)
+    return False
+
+
+def require_ownership(scratch: Scratch, did, walked: Walk) -> None:
+    """Refuse a publication carrying an accepted frame that is not the claimed AID's own.
+
+    **Audit step 4** (design §Modules, added 2026-08-15). Step 1's third-party sweep deliberately
+    admits the issuer of any credential the stream carries, so that an attacker-issued alias ACDC
+    reaches the issuer-binding post-condition and is refused for the right reason (KRT-F1). That
+    admission is a hole while it stands: a stranger's *whole* publication — KEL, registry,
+    self-attested credential — rides in on its own registry inception, every frame verifies, and
+    the claimed AID's authorization is untouched. Before this step existed such a submission was
+    accepted, and :func:`~didwebs.assemble.emit_stream` would host the stranger's registry,
+    credential log and ACDC under Bakobo's domain.
+
+    Run **after** :func:`authorize`, deliberately: the attacker-ACDC case is unowned as well as
+    unauthorized, and the issuer-binding verdict is the sharper of the two.
+
+    **Rejection, not pruning.** Emitting the submission minus the stranger's frames would publish
+    "minus a frame", which is exactly what frame accounting exists to forbid (SPC-F1); and the
+    submitter, not Bakobo, decides what a publication contains. The invariant this buys is that
+    ``emit_stream`` is a total function of accepted state, so every hosted ``keri.cesr``
+    re-ingests cleanly through this same pipeline.
+
+    Raises:
+        BakoboError: ``e.rule.stream.third-party.f`` — the same rule step 1 enforces, since it is
+            the same norm: a publication stream carries only what it is publishing.
+    """
+    aids = {did.aid, *delegators(did, walked)}
+    providers = endpoint_providers(scratch, walked, aids)
+    for frame in walked.frames:
+        if not owned(scratch, did, frame, aids, providers):
+            raise errors.THIRD_PARTY_FRAME(frame=frame.said, principal=_subject(scratch, frame))
+
+
 # ------------------------------------------------------------------------ verified state
 
 
@@ -782,8 +927,9 @@ def ingest(stream: bytes, did) -> Verified:
 
     The pipeline, in order: walk the stream, refuse what this build cannot read or will not
     accept, refuse a submission that is incomplete or carries someone else's frames, ingest into
-    a scratch keripy stack, audit that every walked frame reached accepted state, and finally
-    check the authorization post-conditions on the designated-aliases credential.
+    a scratch keripy stack, audit that every walked frame reached accepted state, check the
+    authorization post-conditions on the designated-aliases credential, and finally require that
+    every accepted frame is the claimed AID's own to publish.
 
     Raises:
         BakoboError: the first attributed failure. Success is defined by the audit, never by the
@@ -802,6 +948,7 @@ def ingest(stream: bytes, did) -> Verified:
         scratch.load(stream)
         audit(scratch, did, walked)
         creder = authorize(scratch, did, walked)
+        require_ownership(scratch, did, walked)
     except BaseException:
         scratch.close()
         raise
