@@ -28,6 +28,9 @@ a stream nobody can read. (``signing.serialize`` hardcodes v1 internally and nee
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import sys
 from dataclasses import dataclass
 
 from hio.base import doing
@@ -37,6 +40,9 @@ from keri.core import coring, eventing, serdering
 from keri.db.dbing import fetchTsgs
 from keri.kering import Vrsn_1_0
 from keri.vdr import credentialing, verifying
+from keri.vdr.eventing import (
+    Reger,  # `viring.Reger` in the reference; merged into vdr.eventing on this line
+)
 
 from didwebs import schemaing
 
@@ -288,6 +294,82 @@ def emit_stream(verified) -> bytes:
     return bytes(msgs)
 
 
+# ------------------------------------------- the keystore side as a fixture/demo entry point
+
+
+def keystore_stream(hab: habbing.Hab, regery: credentialing.Regery, creder) -> bytes:
+    """A publication stream assembled from a keystore *we* control.
+
+    The counterpart of :func:`emit_stream`, and never a substitute for it: this one replays a
+    local Hab's own key event log, which only makes sense for a keystore holding the private
+    keys. The hosted artifact is always :func:`emit_stream`'s, built from what ingest accepted.
+    """
+    msgs = bytearray(hab.replay(pre=hab.pre, gvrsn=V1))
+    msgs.extend(_tel_bytes(regery.reger, creder.regid))
+    msgs.extend(_tel_bytes(regery.reger, creder.said))
+    prefixer, seqner, saider = regery.reger.cancs.get(keys=(creder.said,))
+    msgs.extend(signing.serialize(creder, prefixer, seqner, saider))
+    return bytes(msgs)
+
+
+def main(argv=None) -> int:
+    """``python -m didwebs.assemble`` — mint an AID and a publication stream for it.
+
+    The fixture and demo path docs/design.md §Modules names, and deliberately *not* a console
+    verb: it writes private keys into a keystore, which is exactly what the product does not do
+    (decision ``avuwzl``). It incepts a v1 AID in the keystore directory given, issues the
+    designated-aliases ACDC designating both spellings of that AID's DID at the given host,
+    writes the publication stream, and prints the did:webs DID for ``didwebs publish`` to take.
+    """
+    parser = argparse.ArgumentParser(
+        prog="python -m didwebs.assemble",
+        description="Mint a KERI AID and a did:webs publication stream for it (fixtures/demos).",
+    )
+    parser.add_argument("--keystore", required=True, help="directory to create the keystore in")
+    parser.add_argument("--domain", required=True, help="host the DID is published under")
+    parser.add_argument("--out", required=True, help="file to write the CESR stream to")
+    parser.add_argument("--port", help="optional port, percent-encoded into the DID")
+    parser.add_argument("--alias", default="controller", help="name for the AID in the keystore")
+    args = parser.parse_args(argv)
+
+    authority = args.domain if args.port is None else f"{args.domain}%3A{args.port}"
+    # keripy's Registrar narrates its escrow waits on stdout. Ours is a machine-readable
+    # channel — one line, the DID — so the library's chatter is sent where diagnostics belong.
+    with contextlib.redirect_stdout(sys.stderr), habbing.openHby(
+        name="didwebs", base="", temp=False, headDirPath=args.keystore
+    ) as hby:
+        # The registry database takes its own head directory: `Regery` builds a `Reger` that
+        # otherwise lands in ~/.keri/reg, which would put a demo's registry in the operator's
+        # home keystore and make two runs collide.
+        regery = credentialing.Regery(
+            hby=hby,
+            name="didwebs",
+            base="",
+            temp=False,
+            reger=Reger(
+                name="didwebs",
+                base="",
+                db=hby.db,
+                temp=False,
+                headDirPath=args.keystore,
+                reopen=True,
+            ),
+        )
+        try:
+            hab = hby.makeHab(
+                name=args.alias, icount=1, isith="1", ncount=1, nsith="1", version=V1
+            )
+            did = f"did:webs:{authority}:{hab.pre}"
+            issued = issue_aliases(hab, regery, [f"did:web:{authority}:{hab.pre}", did])
+            with open(args.out, "wb") as file:
+                file.write(keystore_stream(hab, regery, issued.creder))
+        finally:
+            regery.close()
+
+    print(did)
+    return 0
+
+
 def revoke_aliases(
     hab: habbing.Hab,
     regery: credentialing.Regery,
@@ -312,3 +394,7 @@ def revoke_aliases(
         machinery.drain()
 
     return Revoked(registry, issued.creder, rev_serder, rev_anchor)
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised in a subprocess by tests/test_cli.py
+    sys.exit(main())

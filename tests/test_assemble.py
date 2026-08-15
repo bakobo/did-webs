@@ -354,3 +354,60 @@ def test_a_round_tripped_stream_still_carries_its_endpoints(tmp_path):
     with ingest.ingest(emitted_stream, did) as second:
         assert document.derive_document(second, did) == original_doc
         assert len(original_doc["service"]) == 2
+
+
+# ------------------------------------------ the keystore side as a fixture/demo entry point
+
+
+def minted(tmp_path, *args):
+    """Run `python -m didwebs.assemble` in process and return (stream bytes, printed DID)."""
+    stream = tmp_path / "publication.cesr"
+    code = assemble.main(
+        ["--keystore", str(tmp_path / "ks"), "--out", str(stream), *args]
+    )
+    assert code == 0
+    return stream, code
+
+
+def test_the_keystore_entry_point_mints_an_aid_and_a_publishable_stream(tmp_path, capsys):
+    """docs/design.md §Modules: fixtures and demos make a stream this way, and the product's
+    only verb consumes one. The stream it writes must therefore pass our own ingest."""
+    capsys.readouterr()
+    stream, _ = minted(tmp_path, "--domain", "labs.bakobo.com")
+    did = capsys.readouterr().out.strip()
+
+    assert did.startswith("did:webs:labs.bakobo.com:")
+    with ingest.ingest(stream.read_bytes(), did_module.parse(did)) as verified:
+        assert did.endswith(verified.aid)
+        assert verified.acdc.attrib["ids"] == [
+            f"did:web:labs.bakobo.com:{verified.aid}",
+            did,
+        ]
+
+
+def test_the_minted_did_can_carry_a_port(tmp_path, capsys):
+    capsys.readouterr()
+    stream, _ = minted(tmp_path, "--domain", "labs.bakobo.com", "--port", "8443")
+    did = capsys.readouterr().out.strip()
+
+    assert did.startswith("did:webs:labs.bakobo.com%3A8443:")
+    with ingest.ingest(stream.read_bytes(), did_module.parse(did)) as verified:
+        assert f"did:web:labs.bakobo.com%3A8443:{verified.aid}" in verified.acdc.attrib["ids"]
+
+
+def test_the_keystore_entry_point_keeps_its_keystore_where_it_was_told_to(tmp_path, capsys):
+    """A demo must never write into the operator's home keystore: keripy's registry database
+    defaults to ~/.keri/reg, and only an explicit head directory keeps a run self-contained."""
+    capsys.readouterr()
+    minted(tmp_path, "--domain", "labs.bakobo.com")
+
+    keystore = tmp_path / "ks" / "keri"
+    assert sorted(item.name for item in keystore.iterdir()) == ["db", "ks", "reg"]
+    assert (keystore / "reg" / "didwebs").is_dir()  # the registry, not ~/.keri/reg/didwebs
+
+
+def test_the_minted_stream_carries_only_v1_json_version_strings(tmp_path, capsys):
+    capsys.readouterr()
+    stream, _ = minted(tmp_path, "--domain", "labs.bakobo.com")
+
+    assert set(keri_api.version_strings(stream.read_bytes())) <= keri_api.ACCEPTED_VERSION_STRINGS
