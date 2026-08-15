@@ -136,7 +136,7 @@ def test_the_version_guard_refuses_an_event_keripy_derived_as_v2(tmp_path):
     and it must refuse, so a change to keripy's derivation chain fails here rather than in a
     published stream no 1.2.x parser can read.
     """
-    with keri_api.open_keystore("v2", tmp_path, salt_raw=CONTROLLER_SALT) as hby:
+    with keri_api.scratch("v2", tmp_path, salt_raw=CONTROLLER_SALT) as (hby, _regery):
         unpinned = hby.makeHab(name="v2", icount=1, isith="1", ncount=1, nsith="1")
         assert unpinned.kever.serder.pvrsn == Vrsn_2_0
         with pytest.raises(AssertionError) as excinfo:

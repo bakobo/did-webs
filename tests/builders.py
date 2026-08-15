@@ -125,7 +125,7 @@ def endpoints(tmp_path) -> Fixture:
     and an AID with a witness cannot be built in process here: keripy refuses ``toad=0`` with a
     non-empty witness list, and with any real threshold ``assemble.issue_aliases`` never returns
     — the Registrar waits for witness receipts on its anchoring interaction events, which only a
-    receipting Doist would produce (worker E probes E1/E2, 2026-08-15). Witness projection is
+    receipting Doist would produce (worker E probes E1/E2, 2026-08-15; tick ~4geu). Witness projection is
     exercised against planted location/key state in ``tests/test_document.py`` instead.
     """
     with keri_api.scratch("endpoints", tmp_path) as (hby, regery):

@@ -443,6 +443,8 @@ _AUDITED_ESCROWS = tuple(_ESCROW_READERS)
 #: Escrow-to-code attribution, in order; the first escrow holding a frame names its fault.
 #: Everything not listed — out-of-order, partially witnessed, and anything keripy dropped without
 #: escrowing — is residue and gets ``e.proof.stream.frame.f`` (design §Error codes, ledger #16).
+#: ~6ks5 a rotation short of witness receipts sits in ``pwes`` (unlisted) and then misreports as
+#: a signature failure; the honest code awaits phase 2's TOAD work or a shared pending.witness.
 _ATTRIBUTION = (
     ("pses", errors.STREAM_SIG_INVALID),
     ("cmse", errors.STREAM_SIG_INVALID),

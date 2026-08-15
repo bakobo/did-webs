@@ -264,7 +264,10 @@ builds the GLEIF-resolver venv (Python 3.13) for the cross-implementation oracle
 ## Explicitly not in phase 1
 
 Resolution (phase 2, `wmoq5b` applies there), serving (phase 3), any network-facing submission
-surface (see trust boundaries for the standing precondition), `transformKeys` re-encodings,
+surface (see trust boundaries for the standing precondition), **witness-receipt evaluation** —
+a witnessed stream whose receipts are all present ingests fine, but one short of receipts is
+rejected with a misleading signature code because no witness-receipt code exists yet and the
+TOAD policy is phase 2's (`wmoq5b`; tick `~6ks5`) — `transformKeys` re-encodings,
 `versionId`, did:keri resolution, remote issuance choreography (~4spy), secp curves,
 CBOR/MGPK serializations, multi-clause threshold projection (fail-closed, upstream issue),
 multisig *issuance* choreography (threshold derivation from key state is in; creating group
