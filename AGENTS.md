@@ -1,3 +1,5 @@
+<!-- >>> bakobo standards >>> (managed by dev/sync-tier1) -->
+
 ## Bakobo engineering standards
 
 How every Bakobo repo builds is governed by cross-cutting standards, canonical in the sibling
@@ -31,12 +33,17 @@ work: `git clone --depth 1 https://github.com/bakobo/dev`. Always on:
   `this.i` decided, not a worklist. Open findings become **ticks**; a synthesis carries a `status:`
   header line naming what is still open. Full standard:
   [`dev/standards/reviews.md`](../dev/standards/reviews.md).
+- **Input is bounded before it is trusted.** Size, then shape, then meaning — each only
+  trustworthy if the one before it ran. Nothing crosses a boundary unbounded, every input kind
+  enters through a named door, and the set of doors is kept complete by a test rather than by
+  memory. Full standard: [`dev/standards/input-handling.md`](../dev/standards/input-handling.md).
 - **Tasks and tech debt in `tick`** — see the tick stanza below, not an external tracker.
 - **Craftsman working posture.** Development follows the `cc` craftsman methodology — interview at
   intent level, dispatch briefs to worker sub-agents, verify against oracles, and learn from every
   failure. It is Daniel Hardman's personal craft (the private `cc` repo), adopted across Bakobo; the
   operational rules for *this* repo are in [`dev/methodology.md`](../dev/methodology.md).
 
+<!-- <<< bakobo standards <<< -->
 ## Intent methodology
 
 Bakobo develops intent-first. If this repo has design decisions worth explaining, its source of
