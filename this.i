@@ -112,7 +112,28 @@ Production did:webs implementation on KERI = goal:
             carry only KERI10JSON/ACDC10JSON version strings. Rejected a global pin because
             keripy offers no such choke point — the default is per-call by API design. Accepted
             tradeoff: an easy-to-forget parameter on every call, mitigated by the
-            version-string oracle.
+            version-string oracle — but only partly, and the gap is worth naming: that oracle
+            reads event-body version strings and _v1 reads serder.pvrsn, so both watch the
+            protocol axis and neither watches the CESR genus of the attachment counters. A
+            stream can therefore carry v1 bodies and v2 attachments and pass (mark ~3a5h).
+
+            The pin has three call shapes, not one, and the second and third are the ones a
+            reader would otherwise miss. (a) Callers that accept a version argument — makeHab,
+            interact, replay, cloneDelegation, clonePreIter, Habery — are passed V1 outright.
+            (b) Three keripy entry points accept no version argument and derive it instead:
+            Registry.issue, Registry.revoke, and Credentialer.create all read it off the
+            registry's vcp serder. There the pin can only be checked, so assemble._v1 asserts
+            the derived version at the call site; a keripy change that flips the derivation
+            then fails where it happened rather than downstream in a stream nobody can read.
+            (c) The pin extends to *parsing*, which is a separate version axis: a Parser
+            carries its own CESR genus version, also defaulting to v2 on this line, and a valid
+            v1 stream fed to a v2-genus parser yields nothing at all — no exception, no
+            diagnostic, no kevers entry, so the failure presents as an empty stream rather than
+            a rejected one. Pinning the Habery is not sufficient, because the genus is
+            re-chosen on the parse call; ingest therefore passes version=V1 to every Parser
+            construction and every parse call. Rejected treating the emit-side pin as covering
+            both: the two versions are independent, and only the emit side has an oracle, so
+            the parse-side pin is load-bearing and invisible without this note.
 
     Resolver fails below TOAD, tolerates missing receipts above it = decision:
       id: wmoq5b
