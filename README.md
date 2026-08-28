@@ -29,8 +29,9 @@ suite under a **100% branch-coverage gate** (`--cov-fail-under=100`).
 ## Command line
 
 ```sh
-uv run didwebs
+uv run didwebs publish --stream <keri.cesr> --did <did:webs:...> --out <dir>
 ```
 
-The `didwebs` publish command is not yet implemented — this phase ships the error registry and
-CI scaffolding a later brief builds on.
+`publish` verifies the submitted CESR stream, then writes `did.json` and `keri.cesr` into the
+output directory. Refusal leaves no artifact tree behind: either both files appear or neither
+does. Run `uv run didwebs publish --help` for the full argument list.
