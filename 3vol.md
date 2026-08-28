@@ -2,3 +2,10 @@
 kind: todo
 created: 2026-08-15T00:00Z
 
+- 2026-08-28T04:16Z RESOLVED how, not whether (2026-08-28). Two corrections to this tick: heti now pins f663ecd, and that commit is NOT on main or bakobo/stack -- it is on feat/keyalg-on-stack, an unmerged branch carrying two key-algorithm commits heti needs. didwebs is Ed25519-only (3woefn), so following heti is wrong. The right target is bakobo/stack head 03f7d2d3 (Aug 21), 178 commits past our 366d810, which carries the ldes fix (0327e69b, closes ~3v45's upstream half) and the Parser fault sink (e09d7a5e, relevant to ~6ks5).
+
+BUMP ATTEMPTED AND REVERTED: 106 of 872 tests fail on 03f7d2d3. Root cause is exact. keri.app.signing.serialize used to hand-build the ACDC attachment as Counter(Codens.SealSourceTriples, count=1, version=Vrsn_1_0) -- hardcoded v1, which is why assemble.py's docstring says it 'needs neither' version argument. On stack it delegates instead: messagize(creder, bonds=[SealEvent(...)], framed=True, gvrsn=Version), where Version is keripy's global default (v2). Its signature still takes no version argument, so the pin cannot be passed. Consequences, both real: (1) the genus flips to v2 -- SealSourceCouples is '-G' in CtrDex_1_0 but '-S' in CtrDex_2_0, so our stream now carries '-S' and ingest.walk correctly refuses it as e.input.format.stream.f after 3 frames; (2) the attachment SHAPE changes from SealSourceTriples to SealSourceCouples, which alters our published wire format and is therefore an interop question for the 1.2.13 ecosystem, not just an internal pin question -- gvimca says interop outranks estate coherence, so the crossimpl oracle has to answer it before we move.
+
+Fix shape if we proceed: stop calling signing.serialize at assemble.py:295 and :314, call messagize(..., gvrsn=V1) directly from a local helper. Small edit; the risk is entirely in what the oracle says about the couples-vs-triples change. Diagnosis probe: .ignored/probe-pinbump.py.
+
+Also a finding independent of the bump -- see the new tick on the qbqfst oracle's blind spot.
