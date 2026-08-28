@@ -7,10 +7,20 @@ requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Bakobo" }]
 dependencies = [
-    # The estate pin (this.i decisions gvimca/qbqfst) — witness pins the same keri commit, and
-    # they must never diverge or `keri` cannot resolve. Public repo, plain HTTPS: anonymous
+    # The estate pin (this.i decisions gvimca/qbqfst). Public repo, plain HTTPS: anonymous
     # resolution needs no credential, in a fresh clone or in CI.
-    # ~3vol estate pin drift: heti has moved past this commit; see tick before bumping
+    #
+    # The estate does NOT hold one commit in common, and gvimca permits that ("possibly two
+    # keripy versions across bakobo repos, with the mismatch documented rather than hidden").
+    # As of 2026-08-28: witness pins this same commit; heti pins f663ecd, which is NOT on
+    # `stack` or `main` but on `feat/keyalg-on-stack`. We deliberately do not follow heti onto
+    # an unmerged feature branch — didwebs is Ed25519-only (decision 3woefn), so that work is
+    # dead weight here.
+    #
+    # Bumping to `bakobo/stack` head (03f7d2d3) was ATTEMPTED 2026-08-28 and reverted: it breaks
+    # the qbqfst pin and changes our published wire format. See tick ~3vol for the diagnosis.
+    # Any future bump must re-run the cross-implementation oracle (tests/crossimpl), which is
+    # the only thing that checks the interop half of gvimca.
     "keri @ git+https://github.com/bakobo/keripy@366d81071aea7be5b8ad35acbed815e1255224d5",
     # The shared ErrorCode/BakoboError machinery didwebs/errors.py is built on. Public repo,
     # plain HTTPS for the same reason as keri above.
