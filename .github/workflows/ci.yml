@@ -15,10 +15,10 @@ jobs:
       # Both didwebs dependencies (keri, bakobo-errors) are public repos, resolved anonymously
       # over HTTPS — unlike bakobo/witness, no App-token minting or SSH-to-HTTPS rewrite step
       # is needed here.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           python-version: "3.14"
           enable-cache: true
@@ -46,10 +46,10 @@ jobs:
     # resolver subprocess's own 60s-per-call timeout (tests/crossimpl/runner.py).
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
 
@@ -66,7 +66,7 @@ jobs:
       # a pin bump (or any other change to resolver_venv.py) invalidates the cache automatically
       # rather than needing the key kept in sync with the pin by hand.
       - name: Cache the GLEIF resolver venv
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: tests/crossimpl/.venv
           key: resolver-venv-${{ runner.os }}-${{ hashFiles('tests/crossimpl/resolver_venv.py') }}
