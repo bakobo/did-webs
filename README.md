@@ -1,4 +1,5 @@
 [![CI](https://github.com/bakobo/did-webs/actions/workflows/ci.yml/badge.svg)](https://github.com/bakobo/did-webs/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 # did-webs
 
@@ -35,3 +36,7 @@ uv run didwebs publish --stream <keri.cesr> --did <did:webs:...> --out <dir>
 `publish` verifies the submitted CESR stream, then writes `did.json` and `keri.cesr` into the
 output directory. Refusal leaves no artifact tree behind: either both files appear or neither
 does. Run `uv run didwebs publish --help` for the full argument list.
+
+## License
+
+Apache-2.0.
