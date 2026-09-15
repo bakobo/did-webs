@@ -1,4 +1,4 @@
-# Estate keripy pin drift: heti origin/main pins e77335c (local WIP 1108108), past our/witness 366d810 — decide whether didwebs follows; any bump must re-run the cross-impl ingest oracle (spike validated 366d810 only)
+# Decide whether didwebs follows bakobo/stack head 03f7d2d3 (178 commits past our 366d810): blocked on the crossimpl oracle's verdict on the ACDC attachment changing from SealSourceTriples to SealSourceCouples, which is an interop question for the 1.2.13 ecosystem and not just an internal pin. Diagnosis complete, see notes
 kind: todo
 created: 2026-08-15T00:00Z
 
