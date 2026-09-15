@@ -76,6 +76,8 @@ def _parser() -> _Parser:
 def _publish(args) -> int:
     """The pipeline, end to end. Any refusal raises; nothing partial is written."""
     try:
+        # ~3r4a nothing bounds this read: the whole submitted stream is resident before any of
+        # ingest.py's verification starts. Tolerable only while this is a local operator command.
         with open(args.stream, "rb") as file:
             stream = file.read()
     except OSError as exc:
