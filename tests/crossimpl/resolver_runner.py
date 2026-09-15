@@ -22,13 +22,36 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import traceback
 from pathlib import Path
 
 from dws.core import didding, resolving
+from hio.base.filing import Filer
 from keri.app.habbing import openHby
+from keri.db.dbing import LMDBer
 from keri.vdr import credentialing
+
+
+def contain_temp_stores() -> str | None:
+    """Point this process's keripy temp stores at the directory the caller named, if any.
+
+    The caller's half of constraint ``l7ws7hdt``. ``keri`` 1.2.13 hardcodes
+    ``LMDBer.TempHeadDir = "/tmp"`` — it does not consult ``TMPDIR`` — so the only way to keep
+    this subprocess out of the shared namespace is to set the attribute here. Both classes are
+    patched because ``LMDBer`` overrides rather than inherits it.
+
+    Returns the head in force, or None when the caller named none (the script stays runnable by
+    hand, which is how its contract is checked without the harness).
+    """
+    head = os.environ.get("DIDWEBS_TEMP_HEAD")
+    if head is None:
+        return None
+    os.makedirs(head, exist_ok=True)
+    Filer.TempHeadDir = head
+    LMDBer.TempHeadDir = head
+    return head
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--did", required=True, help="the did:webs DID to derive a document for")
     parser.add_argument("--name", default="crossimpl-res", help="Habery name, temp store")
     args = parser.parse_args(argv)
+
+    contained = contain_temp_stores()
 
     stream = Path(args.stream).read_bytes()
     report: dict = {"verdict": None}
@@ -49,6 +74,12 @@ def main(argv: list[str] | None = None) -> int:
     # that alone.
     with openHby(name=args.name, temp=True) as hby:
         rgy = credentialing.Regery(hby=hby, name=hby.name, base=hby.base, temp=True)
+        # Where the stores actually landed, so the caller's leak oracle can assert the
+        # containment was honored rather than assuming it (constraint l7ws7hdt).
+        report["store_paths"] = [
+            store.path for store in (hby.ks, hby.db, hby.cf, rgy.reger)
+        ]
+        report["temp_head"] = contained
         try:
             resolving.save_cesr(hby=hby, rgy=rgy, kc_res=stream, aid=args.aid)
         except Exception as exc:  # noqa: BLE001 - the resolver's own failure is the datum

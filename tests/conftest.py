@@ -14,7 +14,9 @@ from dataclasses import dataclass
 
 import keri_api
 import pytest
+from hio.base.filing import Filer
 from keri.app import habbing
+from keri.db.dbing import LMDBer
 from keri.vdr import credentialing
 from keri_api import (
     CONTROLLER_SALT,
@@ -24,7 +26,45 @@ from keri_api import (
     did_webs,
 )
 
-__all__ = ["CONTROLLER_SALT", "DOMAIN", "designated_ids", "did_web", "did_webs", "keystore"]
+__all__ = [
+    "CONTROLLER_SALT",
+    "DOMAIN",
+    "contained_temp_head",
+    "designated_ids",
+    "did_web",
+    "did_webs",
+    "keystore",
+]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def contained_temp_head(tmp_path_factory):
+    """Repoint keripy's temporary-store head at a directory only this run writes into.
+
+    Constraint ``l7ws7hdt``. ``Filer.remake`` passes ``dir=self.TempHeadDir`` to ``mkdtemp``,
+    and on Linux that attribute resolves to the system temp directory at import time — a
+    namespace every keripy-based repo on the machine shares. Repointing it per run is what lets
+    a leak oracle be a statement about *this* process instead of about ``/tmp``.
+
+    The attribute is read at call time, so patching the classes after import is enough. Both
+    classes are patched: ``LMDBer`` overrides ``TempHeadDir`` rather than inheriting it, so the
+    base-class patch alone would move the keystore and config stores and leave every LMDB
+    database behind.
+
+    Autouse and session-scoped deliberately. A test that had to opt in would be a test that
+    could forget, and the containment has to be in force before the first store is opened.
+    """
+    head = tmp_path_factory.mktemp("keri-temp-head", numbered=False)
+    originals = {Filer: Filer.TempHeadDir, LMDBer: LMDBer.TempHeadDir}
+    for owner in originals:
+        owner.TempHeadDir = str(head)
+    keri_api.TEMP_HEAD = head
+    try:
+        yield head
+    finally:
+        keri_api.TEMP_HEAD = None
+        for owner, original in originals.items():
+            owner.TempHeadDir = original
 
 
 @dataclass(frozen=True)

@@ -12,7 +12,6 @@ error-code string.
 
 from __future__ import annotations
 
-import glob
 from pathlib import Path
 
 import builders
@@ -42,8 +41,14 @@ def ilks(walk) -> list:
 
 
 def temp_stores() -> set:
-    """Every keripy temporary store directory currently sitting in /tmp."""
-    return set(glob.glob("/tmp/keri_*"))
+    """Every keripy temporary store directory this run has open or has stranded.
+
+    Scoped to the run's contained head (constraint ``l7ws7hdt``), not to ``/tmp``: the old glob
+    made every assertion below a claim about a namespace sixteen bakobo repos share, so a
+    sibling suite running at the same time reddened these tests on the oracle rather than on
+    the behavior they exist to check.
+    """
+    return keri_api.temp_stores()
 
 
 def keri_api_reply(tmp_path):

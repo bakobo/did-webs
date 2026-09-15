@@ -27,6 +27,7 @@ is the keystore-side counterpart — what a controller's own keystore would publ
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -103,17 +104,55 @@ def open_keystore(name: str, tmp_path, *, salt_raw: bytes):
         yield hby
 
 
-def _temp_root(path: str) -> str:
-    """The ``mkdtemp`` root under ``/tmp`` that keripy's close leaves standing.
+#: The directory keripy's temporary stores are contained in for this run, or None outside a test
+#: session. Set by ``conftest.contained_temp_head`` (constraint ``l7ws7hdt``), which is autouse
+#: and session-scoped, so None here means a keripy store is being opened outside the suite.
+TEMP_HEAD: Path | None = None
+
+
+def temp_head() -> Path:
+    """The contained temp head, or a loud failure.
+
+    Replaces the assumption that keripy's stores land in ``/tmp``. There is no fallback to the
+    system temp directory on purpose: a fallback would silently restore the shared-namespace
+    oracle this constraint exists to remove.
+    """
+    if TEMP_HEAD is None:
+        raise RuntimeError(
+            "keripy's temporary-store head has not been contained for this run; the "
+            "conftest.contained_temp_head fixture must be active before a store is opened"
+        )
+    return TEMP_HEAD
+
+
+def temp_stores() -> set[str]:
+    """Every temporary store root standing in this run's contained head, as strings.
+
+    The oracle a leak test compares before and after an operation. Scoped to the contained head
+    rather than globbing ``/tmp/keri_*``, which no process can be sole author of.
+    """
+    return {str(entry) for entry in temp_head().iterdir()}
+
+
+def _temp_root(store) -> str:
+    """The ``mkdtemp`` root that keripy's close leaves standing for ``store``.
 
     keripy ignores ``headDirPath`` for temp stores (hio ``Filer.remake`` substitutes its own
     ``mkdtemp``) and its close removes only the store's leaf directory, stranding the root
-    (worker D's finding, 2026-08-15). Same walk as ``didwebs.ingest``'s scratch teardown.
+    (worker D's finding, 2026-08-15). Same walk as ``didwebs.ingest``'s scratch teardown, and
+    the head comes off the store for the same reason (constraint ``l7ws7hdt``).
+
+    Raises:
+        RuntimeError: ``store`` sits outside its own temp head, so no root can be identified.
     """
-    p = Path(path)
-    while p.parent != Path("/tmp"):
-        p = p.parent
-    return str(p)
+    head = Path(os.path.realpath(store.TempHeadDir))
+    node = Path(os.path.realpath(store.path))
+    if head not in node.parents:
+        raise RuntimeError(
+            f"the keripy store at {store.path} sits outside its own temporary head {head}, so "
+            "the directory to remove cannot be identified; refusing to guess at an ancestor"
+        )
+    return str(head / node.relative_to(head).parts[0])
 
 
 @contextmanager
@@ -125,7 +164,7 @@ def scratch(name: str, tmp_path, *, salt_raw: bytes = CONTROLLER_SALT):
             regery = open_regery(hby)
             roots = tuple(
                 dict.fromkeys(
-                    _temp_root(store.path)
+                    _temp_root(store)
                     for store in (hby.ks, hby.db, hby.cf, regery.reger)
                 )
             )

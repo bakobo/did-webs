@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import builders
 import pytest
@@ -211,14 +212,26 @@ def test_delegated_self_expiry(tmp_path, venv_guard):
 
 def test_the_resolver_subprocess_strands_no_keri_temp_directory(tmp_path, venv_guard):
     """keri 1.2.13 has the same leaf-only close as the estate pin, so the resolver subprocess
-    leaves four `/tmp/keri_*` roots per keystore it opens. The runner owns their removal, the
-    way `keri_api.scratch` and `ingest.Scratch` do on our side of the fence."""
-    import glob
+    leaves four temp-store roots per keystore it opens. The runner owns their removal, the way
+    `keri_api.scratch` and `ingest.Scratch` do on our side of the fence.
 
+    Two claims, where there used to be one (constraint `l7ws7hdt`). The subprocess really did
+    put its stores in the head the runner named — reported back rather than assumed, because
+    keri 1.2.13 hardcodes `/tmp` and would otherwise escape silently — and that head is gone
+    afterwards. The old form compared two globs of `/tmp/keri_*`, which could neither tell a
+    contained store from an escaped one nor survive a concurrent keripy process."""
     stream, facts = builders.base(tmp_path)
     did = parse_did(facts["did_webs"])
     _, emitted = _emit(stream, did)
 
-    before = set(glob.glob("/tmp/keri_*"))
-    runner.run(emitted, aid=facts["aid"], did=facts["did_webs"], tmp_path=tmp_path / "resolver")
-    assert set(glob.glob("/tmp/keri_*")) == before
+    resolver_tmp = tmp_path / "resolver"
+    report = runner.run(
+        emitted, aid=facts["aid"], did=facts["did_webs"], tmp_path=resolver_tmp
+    )
+
+    head = resolver_tmp / "keri-stores"
+    assert report["temp_head"] == str(head)
+    assert report["store_paths"], "the subprocess reported no stores at all"
+    for path in report["store_paths"]:
+        assert head in Path(path).parents, f"{path} escaped the head the runner named"
+    assert not head.exists()

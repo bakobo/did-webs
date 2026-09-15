@@ -34,8 +34,8 @@ own CESR genus version, defaulting to v2, and a valid v1 stream fed to a v2-genu
 from __future__ import annotations
 
 import os
+import pathlib
 import shutil
-import tempfile
 from dataclasses import dataclass, field, replace
 from typing import Self
 
@@ -290,19 +290,32 @@ def require_supported(did, walked: Walk) -> None:
 # ---------------------------------------------------------------- the scratch keripy state
 
 
-def _temp_root(path: str) -> str:
-    """The ``mkdtemp`` directory keripy created for a store, given the store's own path.
+def _temp_root(store) -> str:
+    """The ``mkdtemp`` directory keripy created for ``store``, which ingest must remove itself.
 
     hio's ``Filer`` ignores ``headDirPath`` when ``temp=True`` and makes its own directory under
-    the system temp dir, then on close removes only the *leaf* of the path inside it — leaving
-    the ``mkdtemp`` root standing. Ingest removes the roots itself, so a run leaves no litter.
+    the store class's ``TempHeadDir``, then on close removes only the *leaf* of the path inside
+    it — leaving the ``mkdtemp`` root standing. Ingest removes the roots itself, so a run leaves
+    no litter.
+
+    The head comes off the store rather than from ``tempfile.gettempdir()`` (constraint
+    ``l7ws7hdt``): it is the directory that store's own ``mkdtemp`` call used, so the walk is
+    exact wherever keripy has been configured to put its stores. Deriving it from the process's
+    temp directory instead was a latent hazard — a store under ``/tmp/pytest-of-<user>/...``
+    would have yielded ``/tmp/pytest-of-<user>`` as the directory to delete.
+
+    Raises:
+        RuntimeError: ``store`` does not sit under its own temp head, so no root can be
+            identified. Fails closed rather than returning an ancestor for removal.
     """
-    root = os.path.realpath(tempfile.gettempdir())
-    node = os.path.realpath(path)
-    parent = os.path.dirname(node)
-    while parent not in (root, os.path.dirname(parent)):
-        node, parent = parent, os.path.dirname(parent)
-    return node
+    head = pathlib.Path(os.path.realpath(store.TempHeadDir))
+    node = pathlib.Path(os.path.realpath(store.path))
+    if head not in node.parents:
+        raise RuntimeError(
+            f"the keripy store at {store.path} sits outside its own temporary head {head}, so "
+            "the directory to remove cannot be identified; refusing to guess at an ancestor"
+        )
+    return str(head / node.relative_to(head).parts[0])
 
 
 @dataclass
@@ -405,7 +418,7 @@ def open_scratch() -> Scratch:
 
     roots = tuple(
         dict.fromkeys(
-            _temp_root(store.path)
+            _temp_root(store)
             for store in (hby.ks, hby.db, hby.cf, regery.reger)
         )
     )

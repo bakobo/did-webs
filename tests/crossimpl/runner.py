@@ -12,7 +12,6 @@ message so a CI failure is diagnosable without re-running anything.
 
 from __future__ import annotations
 
-import glob
 import json
 import os
 import shutil
@@ -83,8 +82,12 @@ def run(stream: bytes, *, aid: str, did: str, tmp_path, name: str = "crossimpl-r
     stream_path = tmp_path / "keri.cesr"
     stream_path.write_bytes(stream)
 
+    stores = tmp_path / "keri-stores"
     env = dict(os.environ)
     env.update(_temp_home(tmp_path))
+    # The subprocess's half of constraint l7ws7hdt: keri 1.2.13 hardcodes its temp head to
+    # /tmp and ignores TMPDIR, so the head is named here and applied by the script itself.
+    env["DIDWEBS_TEMP_HEAD"] = str(stores)
 
     log_path = tmp_path / "resolver-subprocess.log"
     cmd = [
@@ -99,11 +102,6 @@ def run(stream: bytes, *, aid: str, did: str, tmp_path, name: str = "crossimpl-r
         "--name",
         name,
     ]
-    # keri 1.2.13 has the same leaf-only close as the estate pin: every keystore the resolver
-    # opens strands its mkdtemp roots under /tmp. The subprocess cannot clean them (the leak is
-    # inside keripy's close), so this side removes whatever the run created — the same
-    # ownership `keri_api.scratch` and `ingest.Scratch` take for our own stores.
-    keri_roots_before = set(glob.glob("/tmp/keri_*"))
     try:
         proc = subprocess.run(
             cmd, env=env, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=False
@@ -117,8 +115,16 @@ def run(stream: bytes, *, aid: str, did: str, tmp_path, name: str = "crossimpl-r
             f"resolver subprocess timed out after {TIMEOUT_SECONDS}s (log: {log_path})"
         ) from exc
     finally:
-        for stranded in set(glob.glob("/tmp/keri_*")) - keri_roots_before:
-            shutil.rmtree(stranded, ignore_errors=True)
+        # keri 1.2.13 has the same leaf-only close as the estate pin: every keystore the
+        # resolver opens strands its mkdtemp root. The subprocess cannot clean them (the leak
+        # is inside keripy's close), so this side owns the removal — the same ownership
+        # `keri_api.scratch` and `ingest.Scratch` take for our own stores.
+        #
+        # It removes one directory it named, rather than the difference between two globs of
+        # /tmp/keri_* (constraint l7ws7hdt). That difference included anything *another* keripy
+        # process created during this subprocess's window, so against a concurrent sibling
+        # suite this cleanup deleted a live store belonging to a different repo.
+        shutil.rmtree(stores, ignore_errors=True)
 
     log_path.write_text(
         f"$ {' '.join(cmd)}\nexit: {proc.returncode}\n"

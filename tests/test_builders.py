@@ -496,11 +496,13 @@ def test_every_builder_names_itself_and_the_did_it_is_a_fixture_for(knob, tmp_pa
 def test_building_a_fixture_leaves_no_keri_temp_directory(tmp_path):
     """keripy ignores ``headDirPath`` for temp stores (hio ``Filer.remake`` substitutes its own
     ``mkdtemp``) and its close removes only the leaf, so every keystore build would otherwise
-    strand four ``/tmp/keri_*`` roots — hundreds per suite run, and a noise floor under any
-    global no-leak assertion (worker D's finding, 2026-08-15). ``keri_api.scratch`` owns the
-    removal."""
-    import glob
+    strand four temp-store roots — hundreds per suite run, and a noise floor under any no-leak
+    assertion (worker D's finding, 2026-08-15). ``keri_api.scratch`` owns the removal.
 
-    before = set(glob.glob("/tmp/keri_*"))
+    The comparison is over this run's contained head (constraint ``l7ws7hdt``). It used to glob
+    ``/tmp/keri_*``, which made it a claim about a shared namespace: a concurrent keripy process
+    anywhere on the machine could add a directory between the two reads and fail this test
+    without anything here having leaked."""
+    before = keri_api.temp_stores()
     builders.KNOBS["base"](tmp_path)
-    assert set(glob.glob("/tmp/keri_*")) == before
+    assert keri_api.temp_stores() == before
