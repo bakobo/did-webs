@@ -152,8 +152,8 @@ The fork oracle asserts the conflict is detected either way.
 - `didwebs/cli.py` — **one product verb** (SKP-F3): `didwebs publish --stream <file> --did
   <did> --out <dir>` — ingest→derive→emit→publish, exit nonzero with the error code on any
   failure. The keystore side is deliberately not a console verb: fixtures and demos invoke
-  `python -m didwebs.assemble` (revisit if the onboarding survey ~4spy concludes Bakobo should
-  ship issuance tooling).
+  `python -m didwebs.assemble` (revisit if `docs/issuing-the-designated-aliases-acdc.md`'s
+  survey turns out to understate how hard third-party issuance is in practice).
 
 The pipeline, end to end: `parse → walk/account → keripy-ingest → escrow-audit →
 authorization-post-conditions → derive → to_did_web → emit_stream → publish`. Every byte we
@@ -285,9 +285,9 @@ builds the GLEIF-resolver venv (Python 3.13) for the cross-implementation oracle
 Resolution (phase 2, `wmoq5b` applies there), serving (phase 3), any network-facing submission
 surface (see trust boundaries for the standing precondition), **witness-receipt evaluation** —
 a witnessed stream whose receipts are all present ingests fine, but one short of receipts is
-rejected with a misleading signature code because no witness-receipt code exists yet and the
-TOAD policy is phase 2's (`wmoq5b`; tick `~6ks5`) — `transformKeys` re-encodings,
-`versionId`, did:keri resolution, remote issuance choreography (~4spy), secp curves,
+rejected with the residue code rather than one naming the witness wait, because no
+witness-receipt code exists yet and the TOAD policy is phase 2's (`wmoq5b`; tick `~6ks5`) — `transformKeys` re-encodings,
+`versionId`, did:keri resolution, remote issuance choreography, secp curves,
 CBOR/MGPK serializations, multi-clause threshold projection (fail-closed, upstream issue),
 multisig *issuance* choreography (threshold derivation from key state is in; creating group
 AIDs in tests is fixture work deferred until a fixture needs it).
