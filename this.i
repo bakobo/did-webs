@@ -145,11 +145,28 @@ Production did:webs implementation on KERI = goal:
             passes the v1 version explicitly, and a regression test asserts generated streams
             carry only KERI10JSON/ACDC10JSON version strings. Rejected a global pin because
             keripy offers no such choke point — the default is per-call by API design. Accepted
-            tradeoff: an easy-to-forget parameter on every call, mitigated by the
-            version-string oracle — but only partly, and the gap is worth naming: that oracle
-            reads event-body version strings and _v1 reads serder.pvrsn, so both watch the
-            protocol axis and neither watches the CESR genus of the attachment counters. A
-            stream can therefore carry v1 bodies and v2 attachments and pass (mark ~3a5h).
+            tradeoff: an easy-to-forget parameter on every call, mitigated by two oracles, one
+            per axis, because there are two axes and for a while only one was watched.
+
+            The two axes, and why one oracle was never enough. The version-string oracle reads
+            event-body version strings and assemble._v1 reads serder.pvrsn: both watch the
+            *protocol* version. The CESR *genus* of the attachment counters is independent of
+            it, and nothing watched it — so a stream could carry v1 bodies and v2 attachments
+            and pass. Not theoretical: the 2026-08-28 pin-bump attempt (tick ~3vol) produced
+            exactly that stream, where keri.app.signing.serialize stopped hardcoding a v1
+            SealSourceTriples counter and began deriving the genus from keripy's global
+            default, flipping the ACDC attachment from '-I' to a v2 '-S' SealSourceCouples
+            while every event body stayed KERI10JSON. The version-string oracle passed it, and
+            the first thing to notice was ingest.walk rejecting the stream as unreadable — a
+            confusing report at the consuming end about a defect introduced at the emitting
+            one. The genus oracle closes that: every generated stream must be readable end to
+            end by a CESR consumer pinned to genus v1, which is what keripy 1.2.13 is, and a
+            v2 counter raises UnexpectedCodeError where it was emitted. Rejected decoding the
+            counters by hand in the toolkit — that means reimplementing a CESR walk in test
+            support, and keripy's own Parser is both the correct walker and the thing the
+            deployed ecosystem actually runs. Accepted tradeoff: the oracle proves the counters
+            decode under CtrDex_1_0 by consuming the stream rather than by enumerating codes,
+            so it reports where reading stopped rather than naming every counter it accepted.
 
             The pin has three call shapes, not one, and the second and third are the ones a
             reader would otherwise miss. (a) Callers that accept a version argument — makeHab,
