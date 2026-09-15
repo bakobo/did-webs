@@ -472,6 +472,10 @@ def test_every_builder_output_carries_only_v1_json_version_strings(knob, tmp_pat
     stream, facts = builders.KNOBS[knob](tmp_path)
     deliberate = facts["deliberate_version_strings"]
     assert set(keri_api.version_strings(stream)) - deliberate <= keri_api.ACCEPTED_VERSION_STRINGS
+    # The genus axis, which the version strings above cannot see (constraint qbqfst): a
+    # stream can carry v1 bodies throughout and still attach a v2 counter.
+    violation = keri_api.v1_genus_violation(stream)
+    assert (violation is not None) is facts["deliberate_genus_violation"], violation
 
 
 @pytest.mark.parametrize("knob", sorted(builders.KNOBS))

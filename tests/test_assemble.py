@@ -122,6 +122,7 @@ def test_every_artifact_issue_aliases_produces_carries_protocol_v1(keystore):
 
     stream = keri_api.publication_stream(keystore.hab, keystore.regery, issued.creder)
     assert set(keri_api.version_strings(stream)) <= keri_api.ACCEPTED_VERSION_STRINGS
+    assert keri_api.v1_genus_violation(stream) is None
 
 
 def test_the_version_guard_passes_a_v1_event_through_unchanged(keystore):
@@ -300,6 +301,7 @@ def test_the_emitted_stream_carries_only_v1_json_version_strings(tmp_path):
     for knob in ("base", "delegated", "deactivated", "endpoints"):
         emitted_stream, _, _ = emitted(knob, tmp_path / knob)
         assert set(keri_api.version_strings(emitted_stream)) <= keri_api.ACCEPTED_VERSION_STRINGS
+        assert keri_api.v1_genus_violation(emitted_stream) is None
 
 
 def test_every_attachment_group_in_an_emitted_stream_is_a_v1_counter(tmp_path):
@@ -411,3 +413,4 @@ def test_the_minted_stream_carries_only_v1_json_version_strings(tmp_path, capsys
     stream, _ = minted(tmp_path, "--domain", "labs.bakobo.com")
 
     assert set(keri_api.version_strings(stream.read_bytes())) <= keri_api.ACCEPTED_VERSION_STRINGS
+    assert keri_api.v1_genus_violation(stream.read_bytes()) is None

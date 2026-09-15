@@ -254,6 +254,7 @@ def test_the_keystore_entry_point_writes_a_stream_and_prints_its_did(keystore_st
     assert did.startswith(f"did:webs:{DOMAIN}:")
     assert stream.read_bytes().startswith(b'{"v":"KERI10JSON')
     assert set(keri_api.version_strings(stream.read_bytes())) <= keri_api.ACCEPTED_VERSION_STRINGS
+    assert keri_api.v1_genus_violation(stream.read_bytes()) is None
 
 
 def test_the_installed_entry_point_publishes_end_to_end(keystore_stream, tmp_path):

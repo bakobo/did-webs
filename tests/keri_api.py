@@ -16,8 +16,10 @@ Adaptations from the reference, which targets keri 1.2.13:
   are dropped. didwebs phase-1 fixtures have no witnesses, so delegation approval is the
   synchronous three-step dance in :func:`approve_delegation` rather than a Doist pipeline.
 * Keystores are temp stores. keripy ignores ``headDirPath`` for them (hio substitutes its own
-  ``mkdtemp`` under ``/tmp``) and close removes only the leaf, so :func:`scratch` removes the
-  stranded roots itself; salts are fixed so AIDs are stable across runs.
+  ``mkdtemp`` under the store class's ``TempHeadDir``) and close removes only the leaf, so
+  :func:`scratch` removes the stranded roots itself; salts are fixed so AIDs are stable across
+  runs. The head is repointed per run by ``conftest.contained_temp_head`` (constraint
+  ``l7ws7hdt``), so a root is never identified by globbing a namespace other repos share.
 
 Nothing here constructs the *ingest-side* stream: ``didwebs.assemble.emit_stream`` (a later
 brief) re-assembles a stream from verified state in a scratch database. :func:`publication_stream`
@@ -37,6 +39,7 @@ from keri import core, kering
 from keri.app import habbing, signing
 from keri.app.habbing import openHby
 from keri.core import coring, serdering
+from keri.core.parsing import Parser
 from keri.db import dbing
 from keri.kering import Vrsn_1_0
 from keri.vdr import credentialing
@@ -291,6 +294,47 @@ class Frame:
     @property
     def attachments(self) -> bytes:
         return self.raw[self.body_end : self.end]
+
+
+def v1_genus_violation(stream: bytes) -> str | None:
+    """Where a CESR consumer pinned to genus v1 stops reading ``stream``, or None if it reads
+    it all.
+
+    The second half of constraint ``qbqfst``'s oracle, and the one :func:`version_strings`
+    cannot provide. Version strings and ``serder.pvrsn`` are the *protocol* axis; the genus of
+    the attachment counters is chosen separately, so a stream can carry ``KERI10JSON`` bodies
+    throughout and still attach a v2 counter that no deployed 1.2.13 parser can read.
+
+    The check is "keripy, pinned to v1, consumes every byte" rather than an enumeration of the
+    counter codes. That is the same claim — ``Parser`` decodes each counter through
+    ``Counter(qb64b=..., version=Vrsn_1_0)``, which raises ``UnexpectedCodeError`` on a code
+    outside ``CtrDex_1_0`` — and it avoids reimplementing a CESR walk in test support, where a
+    subtly wrong walk would be an oracle that lies. It also *is* what the ecosystem does, which
+    is the property gvimca actually cares about.
+
+    Driven one message at a time through ``msgParsator`` rather than through ``Parser.parse``,
+    for the reason ``ingest.walk`` gives: ``parse`` swallows a failure, and this needs the
+    offset it stopped at.
+
+    Returns:
+        None when the whole stream reads under genus v1, or a sentence naming the byte offset
+        reading stopped at and what keripy said about it.
+    """
+    parser = Parser(framed=True, version=V1)
+    ims = bytearray(stream)
+    while ims:
+        consumed = len(stream) - len(ims)
+        extractor = parser.msgParsator(ims=ims, framed=True, local=False, version=V1)
+        try:
+            while True:
+                next(extractor)
+        except StopIteration:
+            pass
+        except Exception as exc:  # noqa: BLE001 — keripy raises many extraction error types
+            return f"stopped at byte {consumed} of {len(stream)}: {type(exc).__name__}: {exc}"
+        if len(ims) == len(stream) - consumed:
+            return f"stopped at byte {consumed} of {len(stream)}: made no progress"
+    return None
 
 
 def version_strings(stream: bytes) -> list[str]:

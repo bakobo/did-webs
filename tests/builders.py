@@ -14,9 +14,12 @@ a correctly signed event on the claimed AID's own KEL and only its serialization
 so on. ``tests/test_builders.py`` asserts the specific observable property behind each claim.
 
 **Every builder returns ``(stream, facts)``.** ``facts`` carries the AIDs, SAIDs and DIDs a
-consuming test needs to assert against, plus ``deliberate_version_strings`` — the version
-strings that fixture is knowingly wrong about, which is how the toolkit-wide qbqfst oracle
-excludes the two serialization knobs without weakening itself.
+consuming test needs to assert against, plus the two keys that keep the toolkit-wide qbqfst
+oracle honest: ``deliberate_version_strings`` (the version strings this fixture is knowingly
+wrong about) and ``deliberate_genus_violation`` (whether a v1-genus CESR consumer is expected
+to choke on it). Both exist so the two serialization knobs are excluded as *data* rather than
+by a list of names kept in a test module, and so a fixture that becomes unreadable by accident
+is a failure rather than an entry someone adds.
 
 **Determinism.** Salts are fixed and the designation date is fixed, so every AID, SAID and DID
 is identical from run to run. The *bytes* are not: keripy stamps wall-clock first-seen replay
@@ -68,6 +71,7 @@ def _facts(knob: str, aid: str, **extra) -> dict:
         "ids": [],
         "kel_sn": 0,
         "deliberate_version_strings": frozenset(),
+        "deliberate_genus_violation": False,
     }
     facts.update(extra)
     return facts
@@ -476,6 +480,7 @@ def cbor_frame(tmp_path) -> Fixture:
             **facts,
             "knob": "cbor_frame",
             "deliberate_version_strings": frozenset({"KERI10CBOR"}),
+            "deliberate_genus_violation": True,
             "parent_stream": stream,
         },
     )
@@ -501,6 +506,7 @@ def v2_frame(tmp_path) -> Fixture:
             **facts,
             "knob": "v2_frame",
             "deliberate_version_strings": frozenset({"KERICAACAAJSON"}),
+            "deliberate_genus_violation": True,
             "parent_stream": stream,
         },
     )
