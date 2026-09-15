@@ -6,9 +6,9 @@ created: 2026-08-15T02:05Z
 
 1. keripy refusing toad=0 with witnesses is NOT a blocker here. make_hab(wits=[wit.pre], toad='1') succeeds, the icp reaches first-seen immediately, and after in-process receipting (wit.receipt -> hby.psr.parse) db.pwes is EMPTY and the anchoring ixn at sn=1 is first-seen too. The KEL side is fine.
 
-2. The block is on the TEL side, in credentialing.Registrar. processWitnessEscrow (credentialing.py:774-801) holds the vcp in reger.tpwe until BOTH (a) len(db.wigs) == len(kever.wits) -- which in-process receipting does satisfy -- AND (b) registrar.receiptor.cues holds an entry matching {pre, sn}. That cue is raised only by keripy's own Receiptor gathering receipts over the network. Receipts arriving by any other route leave 'witnessed' False and the loop hits  forever.
+2. The block is on the TEL side, in credentialing.Registrar. processWitnessEscrow (credentialing.py:774-801) holds the vcp in reger.tpwe until BOTH (a) len(db.wigs) == len(kever.wits) -- which in-process receipting does satisfy -- AND (b) registrar.receiptor.cues holds an entry matching {pre, sn}. That cue is raised only by keripy's own Receiptor gathering receipts over the network. Receipts arriving by any other route leave 'witnessed' False and the loop hits its continue statement forever.
 
-3. Even past that, Registrar.complete (credentialing.py:723-738) is , and WitnessPublisher.sendDo (agenting.py:632-673) only pushes that cue after building a  per witness and waiting  -- a real network send.
+3. Even past that, Registrar.complete (credentialing.py:723-738) requires reger.ctel to be set AND witPub.sent(said=pre) to be true, and WitnessPublisher.sendDo (agenting.py:632-673) only pushes that cue after building a messenger(hab, wit) client per witness and waiting for that client to go idle -- a real network send.
 
 4. TRIED AND DID NOT WORK: interleaving real in-process receipting into _Issuance.drain, and additionally pushing synthetic cues into both registrar.receiptor.cues and registrar.witPub.cues. Registry still incomplete after 60 drains, so there is at least one further gate beyond (2b) and (3). Do not re-try cue-planting; it is a dead end.
 
