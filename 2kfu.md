@@ -1,5 +1,6 @@
 # Fixture knob for an unanchored delegation (delegator KEL present, seal never anchored) so e.proof.stream.seal.f/anchor.f get end-to-end oracles instead of planted-escrow tests only
 kind: todo
 created: 2026-08-15T01:20Z
+closed: 2026-09-15T06:13Z
 
 - 2026-09-15T06:13Z DONE 2026-09-15. Fixture is builders.unanchored_delegation, knob 'delegated:unanchored', in the negative matrix at e.proof.stream.seal.f. Built by frame surgery on a complete delegated stream (remove the delegator's anchoring ixn) rather than by skipping approve_delegation -- keripy will not produce a usable delegate without approval, since an unapproved dip never leaves the delegable escrow, so that route would derange the fixture twice. Worked first try. NOTE what is still NOT covered end to end: e.proof.stream.anchor.f and e.proof.stream.frame.f (the latter has dropped_frame_candidate, so really just anchor.f) still rest on planted escrow entries alone; anchor.f needs a TEL event whose anchoring KEL event is missing, which is the same surgery one layer down and is probably a similarly small job.
