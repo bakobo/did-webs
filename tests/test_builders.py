@@ -295,6 +295,40 @@ def test_delegated_without_the_delegator_kel_omits_every_delegator_frame(tmp_pat
     assert facts["includes_delegator"] is False
 
 
+def test_unanchored_delegation_keeps_the_delegator_but_drops_only_its_anchoring_event(tmp_path):
+    """The one-derangement rule, stated as assertions: the delegator's key state is still fully
+    establishable from the stream, and exactly one frame — its anchoring ixn — is gone."""
+    stream, facts = builders.unanchored_delegation(tmp_path)
+    parent = facts["parent_stream"]
+    bodies = keri_api.bodies(stream)
+    delegator, delegate = facts["delegator_aid"], facts["aid"]
+
+    assert len(bodies) == len(keri_api.bodies(parent)) - 1
+    assert len(stream) == len(parent) - len(facts["removed_anchor"])
+    assert delegator in {b.get("i") for b in bodies}  # the delegator's own icp is still there
+    assert next(b for b in bodies if b.get("t") == "dip")["di"] == delegator
+
+    anchors = [
+        seal
+        for body in bodies
+        if body.get("i") == delegator
+        for seal in body.get("a") or []
+        if seal.get("i") == delegate
+    ]
+    assert anchors == [], "the anchoring seal is what this fixture removes"
+
+
+def test_unanchored_delegation_removes_a_frame_that_really_was_the_anchor(tmp_path):
+    """Guards the surgery: if ``_anchoring_frame`` ever picked the wrong event, the fixture would
+    still look deranged while exercising something else entirely."""
+    _, facts = builders.unanchored_delegation(tmp_path)
+    (removed,) = keri_api.bodies(facts["removed_anchor"])
+
+    assert removed["t"] == "ixn"
+    assert removed["i"] == facts["delegator_aid"]
+    assert [seal["i"] for seal in removed["a"]] == [facts["aid"]]
+
+
 def test_truncated_stops_partway_through_the_kel_and_ships_no_tel(tmp_path):
     stream, facts = builders.truncated(tmp_path)
     assert ilks(stream) == ["icp"]
@@ -434,6 +468,8 @@ def test_endpoints_names_no_witness_because_none_can_be_built_in_process(tmp_pat
 
 
 def test_the_knob_registry_covers_every_name_the_brief_names():
+    """The brief's list, plus ``delegated:unanchored``, added later under tick ``~2kfu`` — the
+    one delegation shape that reaches the seal check instead of passing it or stopping short."""
     assert set(builders.KNOBS) == {
         "base",
         "without_acdc",
@@ -452,6 +488,7 @@ def test_the_knob_registry_covers_every_name_the_brief_names():
         "multi_clause_kt",
         "delegated",
         "delegated:no-delegator",
+        "delegated:unanchored",
         "truncated",
         "deactivated",
         "alias_foreign_aid",

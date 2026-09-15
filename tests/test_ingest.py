@@ -884,7 +884,15 @@ def test_attribution_of_an_event_for_an_aid_with_no_key_state_falls_through(tmp_
 
 def test_attribution_maps_each_escrow_kind_to_its_own_leaf(tmp_path):
     """The escrow-to-code table, exercised against planted entries: the distinctions the error
-    taxonomy asserts have to be observable, and each leaf needs a test to be discharged."""
+    taxonomy asserts have to be observable, and each leaf needs a test to be discharged.
+
+    Planting is the right shape *here* — this tests the table, and a planted entry is how each
+    branch of it gets reached in isolation. It used to be the only evidence for
+    ``e.proof.stream.seal.f``, which is weaker: a table can be correct while nothing real ever
+    lands in the escrow it reads. The ``delegated:unanchored`` fixture in the negative matrix
+    below now drives that leaf end to end, from a stream a delegator genuinely failed to anchor
+    (tick ``~2kfu``). ``anchor`` and ``frame`` still rest on planted entries alone.
+    """
     stream, facts = fixture("base", tmp_path)
     walked = ingest.walk(stream)
     frame = walked.frames[1]
@@ -1200,6 +1208,7 @@ REJECTIONS = [
     ("cbor_frame", "e.feature.unsupported.serialization.f"),
     ("v2_frame", "e.input.format.stream.f"),
     ("delegated:no-delegator", "e.input.missing.delegator.f"),
+    ("delegated:unanchored", "e.proof.stream.seal.f"),
 ]
 
 

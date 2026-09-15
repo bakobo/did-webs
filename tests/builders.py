@@ -627,6 +627,50 @@ def delegated(tmp_path, *, include_delegator: bool = True) -> Fixture:
         )
 
 
+def unanchored_delegation(tmp_path) -> Fixture:
+    """A delegated AID whose delegator's KEL is present but never anchors the delegation.
+
+    The third delegation shape, and the one that reaches a check the other two cannot. With the
+    delegator absent (``delegated:no-delegator``) the pipeline stops earlier, at
+    ``e.input.missing.delegator.f``: it has no key state to check the seal against and says so.
+    Here the delegator's key state is fully established from its own inception, so the check
+    actually runs — and finds no anchoring event for this delegate. That is the difference
+    between "I cannot check this" and "I checked it and it is not there", and only the second
+    exercises ``e.proof.stream.seal.f`` end to end rather than from a planted escrow entry.
+
+    Built by removing the anchoring interaction event from a complete delegated stream, rather
+    than by skipping the approval when the keystore is built. keripy will not produce a usable
+    delegate without it: an unapproved ``dip`` never leaves the delegable escrow, so there would
+    be no key state to issue the ACDC from and the fixture would be deranged in two ways at
+    once, which is what this toolkit's one-derangement rule forbids. The surgery is the same
+    idiom ``forked_kel`` and ``dropped_frame_candidate`` use, and the frame is identified by
+    what it *is* — the delegator's ixn carrying a seal naming this delegate — never by position.
+    """
+    stream, facts = delegated(tmp_path)
+    anchor = _anchoring_frame(stream, facts["delegator_aid"], facts["aid"])
+    unanchored = stream[: anchor.start] + stream[anchor.end :]
+
+    return Fixture(
+        unanchored,
+        {
+            **facts,
+            "knob": "delegated:unanchored",
+            "parent_stream": stream,
+            "removed_anchor": stream[anchor.start : anchor.end],
+        },
+    )
+
+
+def _anchoring_frame(stream: bytes, delegator_aid: str, delegate_aid: str):
+    """The delegator's interaction event whose seal anchors ``delegate_aid``'s inception."""
+    for frame, body in zip(keri_api.frames(stream), keri_api.bodies(stream), strict=True):
+        if body.get("t") != "ixn" or body.get("i") != delegator_aid:
+            continue
+        if any(seal.get("i") == delegate_aid for seal in body.get("a") or []):
+            return frame
+    raise LookupError(f"no event in the stream anchors {delegate_aid} for {delegator_aid}")
+
+
 def deactivated(tmp_path) -> Fixture:
     """A controller rotated to a null next key state — abandoned, and still publishable.
 
@@ -655,8 +699,10 @@ def deactivated(tmp_path) -> Fixture:
 
 
 #: Every knob by name. The ingest brief's negative oracles index into this; the names are the
-#: shared vocabulary and must not be renamed. ``delegated`` appears twice because the brief asks
-#: for the delegated AID "with and without delegator KEL included" as one knob with two shapes.
+#: shared vocabulary and must not be renamed. ``delegated`` appears three times: the brief asks
+#: for the delegated AID "with and without delegator KEL included", and ``:unanchored`` was added
+#: later (tick ~2kfu) because neither of those reaches the seal check — one passes it and the
+#: other stops short of it with ``e.input.missing.delegator.f``.
 KNOBS = {
     "base": base,
     "without_acdc": without_acdc,
@@ -675,6 +721,7 @@ KNOBS = {
     "multi_clause_kt": multi_clause_kt,
     "delegated": delegated,
     "delegated:no-delegator": functools.partial(delegated, include_delegator=False),
+    "delegated:unanchored": unanchored_delegation,
     "truncated": truncated,
     "deactivated": deactivated,
     "alias_foreign_aid": alias_foreign_aid,
