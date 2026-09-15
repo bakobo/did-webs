@@ -382,13 +382,20 @@ def forked_kel(tmp_path) -> Fixture:
     )
 
 
-def dropped_frame_candidate(tmp_path) -> Fixture:
+def dropped_frame_candidate(tmp_path, *, rotate: bool = False) -> Fixture:
     """A valid stream plus one well-formed event keripy will escrow forever and never accept.
 
-    The extra frame is a genuine, correctly signed interaction event for the claimed AID, but
-    it sits several sequence numbers ahead of anything in the stream, so its prior-event digest
-    resolves to nothing. keripy escrows it out of order and never first-sees it. A pipeline that
-    publishes "everything that was accepted" would silently drop it; accounting must notice.
+    The extra frame is a genuine, correctly signed event for the claimed AID, but it sits
+    several sequence numbers ahead of anything in the stream, so its prior-event digest resolves
+    to nothing. keripy escrows it out of order and never first-sees it. A pipeline that publishes
+    "everything that was accepted" would silently drop it; accounting must notice.
+
+    ``rotate`` makes the orphan a rotation instead of an interaction, and the difference is not
+    cosmetic. A rotation is signed by the *new* keys it announces, while the accepted key state
+    still holds the old ones, so any check that verifies it against the current Kever finds no
+    satisfying signature and concludes the signature was forged. Both fixtures are unaccounted
+    for exactly the same reason — a prior event that is not there — so the two must earn the
+    same code, and for a while they did not (tick ``~6ks5``).
     """
     stream, facts = base(tmp_path / "trunk")
     ahead = facts["kel_sn"] + 4
@@ -396,6 +403,8 @@ def dropped_frame_candidate(tmp_path) -> Fixture:
         hab = keri_api.make_hab(hby, "controller")
         for step in range(ahead):
             hab.interact(data=[{"d": f"step {step}"}], version=Vrsn_1_0)
+        if rotate:
+            hab.rotate(version=Vrsn_1_0, gvrsn=Vrsn_1_0)
         orphan = keri_api.frames(keri_api.kel_bytes(hab))[-1]
         assert hab.pre == facts["aid"]
         appended = stream + orphan.raw[orphan.start : orphan.end]
@@ -404,8 +413,9 @@ def dropped_frame_candidate(tmp_path) -> Fixture:
         appended,
         {
             **facts,
-            "knob": "dropped_frame_candidate",
-            "orphan_sn": ahead,
+            "knob": "dropped_rotation_candidate" if rotate else "dropped_frame_candidate",
+            "orphan_sn": ahead + 1 if rotate else ahead,
+            "orphan_ilk": "rot" if rotate else "ixn",
             "parent_stream": stream,
         },
     )
@@ -713,6 +723,7 @@ KNOBS = {
     "tampered_sig": tampered_sig,
     "forked_kel": forked_kel,
     "dropped_frame_candidate": dropped_frame_candidate,
+    "dropped_rotation_candidate": functools.partial(dropped_frame_candidate, rotate=True),
     "third_party": third_party,
     "stranger_bundle": stranger_bundle,
     "cbor_frame": cbor_frame,

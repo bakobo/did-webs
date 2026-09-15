@@ -473,8 +473,10 @@ _AUDITED_ESCROWS = tuple(_ESCROW_READERS)
 #: Escrow-to-code attribution, in order; the first escrow holding a frame names its fault.
 #: Everything not listed — out-of-order, partially witnessed, and anything keripy dropped without
 #: escrowing — is residue and gets ``e.proof.stream.frame.f`` (design §Error codes, ledger #16).
-#: ~6ks5 a rotation short of witness receipts sits in ``pwes`` (unlisted) and then misreports as
-#: a signature failure; the honest code awaits phase 2's TOAD work or a shared pending.witness.
+#: ~6ks5 a rotation short of witness receipts sits in ``pwes``, which is unlisted here, so it
+#: earns the residue code. That is honest but unhelpfully vague — it *is* a rotation waiting for
+#: receipts, and saying so needs either phase 2's TOAD work or a shared ``e.state.pending.witness.r``.
+#: It no longer misreports as a signature failure: see ``_signature_fails``.
 _ATTRIBUTION = (
     ("pses", errors.STREAM_SIG_INVALID),
     ("cmse", errors.STREAM_SIG_INVALID),
@@ -612,16 +614,33 @@ def duplicitous(scratch: Scratch, walked: Walk) -> set[str]:
     return found
 
 
+#: Event types signed by keys the event itself announces rather than by the accepted key state.
+#: A rotation's signatures are made with the *new* keys it rotates to, so checking them against
+#: the current Kever's verfers is asking the wrong question and always gets "no valid signature"
+#: for an answer.
+_ROTATION_ILKS = frozenset({"rot", "drt"})
+
+
 def _signature_fails(scratch: Scratch, frame: Frame) -> bool:
     """Whether ``frame``'s controller signatures fail against the AID's accepted key state.
 
     keripy escrows a partially *signed* event but simply drops one whose signature does not
     verify, so no escrow attributes a forged signature and the audit has to ask directly. The
     question is asked with keripy's own ``verifySigs`` and the Kever's own threshold, against the
-    key state the next event must satisfy. A rotation carries its own new keys and is out of
-    scope here; it falls through to the residue code rather than being guessed at.
+    key state the next event must satisfy.
+
+    A rotation is excluded, because the question does not apply to it: it carries its own new
+    keys, and the accepted key state still holds the old ones. This exclusion was the docstring's
+    stated intent from the start and was not in the code, so *every* unaccounted rotation — one
+    escrowed out of order, one short of witness receipts (tick ``~6ks5``), one waiting on a
+    delegation — was reported as a forged signature. That is a diagnosis pointing at the
+    controller's keys for a stream whose signatures are fine, which is worse than saying less:
+    a rotation now falls through to the residue code, the same one an unaccounted interaction
+    event in the same position already earned.
     """
     if not (frame.is_kel and frame.sigers):
+        return False
+    if frame.ilk in _ROTATION_ILKS:
         return False
     if frame.principal not in scratch.hby.kevers:
         return False

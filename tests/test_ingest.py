@@ -882,6 +882,38 @@ def test_attribution_of_an_event_for_an_aid_with_no_key_state_falls_through(tmp_
         assert ingest.attribute(scratch, orphaned).code == "e.proof.stream.frame.f"
 
 
+def test_an_unaccounted_rotation_is_not_reported_as_a_forged_signature(tmp_path):
+    """Two orphans, unaccounted for the same reason, must earn the same code.
+
+    ``dropped_frame_candidate`` and ``dropped_rotation_candidate`` differ only in the ilk of the
+    trailing event, and both are unaccounted because their prior event is absent. The rotation
+    used to come back ``e.proof.stream.sig.f`` — a claim about the controller's keys, on a stream
+    whose signatures are perfectly good — because its signatures were checked against the
+    accepted key state rather than the new keys it announces (tick ``~6ks5``).
+    """
+    codes = {}
+    for knob in ("dropped_frame_candidate", "dropped_rotation_candidate"):
+        stream, facts = fixture(knob, tmp_path / knob)
+        with pytest.raises(BakoboError) as caught:
+            ingest.ingest(stream, claimed(facts)).__enter__()
+        codes[knob] = caught.value.code
+
+    assert codes["dropped_rotation_candidate"] == codes["dropped_frame_candidate"]
+    assert codes["dropped_rotation_candidate"] == "e.proof.stream.frame.f"
+
+
+def test_a_rotation_is_never_asked_whether_it_satisfies_the_old_key_state(tmp_path):
+    """The unit behind the invariant above: the question is inapplicable, not merely unanswered,
+    so a rotation must be excluded rather than allowed to fail the check."""
+    stream, _ = fixture("dropped_rotation_candidate", tmp_path)
+    walked = ingest.walk(stream)
+    orphan = walked.frames[-1]
+    assert orphan.ilk == "rot"
+
+    with loaded(stream) as scratch:
+        assert ingest._signature_fails(scratch, orphan) is False
+
+
 def test_attribution_maps_each_escrow_kind_to_its_own_leaf(tmp_path):
     """The escrow-to-code table, exercised against planted entries: the distinctions the error
     taxonomy asserts have to be observable, and each leaf needs a test to be discharged.
@@ -1203,6 +1235,7 @@ REJECTIONS = [
     ("tampered_sig", "e.proof.stream.sig.f"),
     ("forked_kel", "e.state.conflict.kel.f"),
     ("dropped_frame_candidate", "e.proof.stream.frame.f"),
+    ("dropped_rotation_candidate", "e.proof.stream.frame.f"),
     ("third_party", "e.rule.stream.third-party.f"),
     ("stranger_bundle", "e.rule.stream.third-party.f"),
     ("cbor_frame", "e.feature.unsupported.serialization.f"),

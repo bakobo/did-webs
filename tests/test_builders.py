@@ -480,6 +480,7 @@ def test_the_knob_registry_covers_every_name_the_brief_names():
         "tampered_sig",
         "forked_kel",
         "dropped_frame_candidate",
+        "dropped_rotation_candidate",
         "third_party",
         "stranger_bundle",
         "cbor_frame",
