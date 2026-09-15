@@ -130,7 +130,7 @@ def two_registries(tmp_path) -> Fixture:
     claimed AID anchored in its own KEL is the claimed AID's own material by every ownership
     test ingest applies, so dropping it from the hosted artifact would be publishing a
     submission minus a frame, which is the failure ``embuup`` and the frame accounting exist to
-    prevent (tick ``~2nj7``).
+    prevent.
 
     The spare registry's ``vcp`` is placed with the other registry's, before the credential
     transaction logs, which is the order ``dws/core/artifacting.py`` emits registries in.

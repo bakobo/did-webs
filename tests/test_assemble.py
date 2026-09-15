@@ -302,8 +302,7 @@ def test_a_registry_the_controller_never_issued_from_is_still_hosted(tmp_path):
     A registry the claimed AID anchored in its own KEL passes every ownership test ingest
     applies, so the publication is accepted with the spare registry's ``vcp`` accounted for. If
     emission then derives its registries only from the credentials it emits, that accounted
-    frame is silently absent from what gets hosted — accepted, owned, and unpublished (tick
-    ``~2nj7``).
+    frame is silently absent from what gets hosted — accepted, owned, and unpublished.
     """
     emitted_stream, submitted, facts = emitted("two_registries", tmp_path)
 
