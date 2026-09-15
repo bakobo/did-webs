@@ -7,16 +7,20 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 19 codes below are verbatim from docs/design.md's reconciled table (rev 2, 2026-08-14). The
-table has sixteen rows: `e.proof.stream.*.f` is written once and names its four leaves — `sig`,
-`seal`, `anchor`, `frame` — in the same cell, because the audit picks between them by which
-escrow held the frame. All nineteen were checked against the bakobo/errors catalog at the
-`bakobo-errors` pin — none collides with a shipped code, and three are boundary cases against
-heti's near-neighbors, called out as a comment where each is declared. Identity is the contract:
-a code's string, once shipped, never changes (dev/standards/error-codes.md, "A code's meaning
-and `args` signature never change once shipped").
+The 20 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
+from that table's rev 2 (2026-08-14); `e.input.range.stream.f` was added with the stream door
+(constraint `adyiw2mm`). The table carries fewer rows than codes, because
+`e.proof.stream.*.f` is written once and names its four leaves — `sig`, `seal`, `anchor`,
+`frame` — in the same cell, the audit picking between them by which escrow held the frame.
 
-The count in the paragraph above is not decoration: `tests/test_errors.py` reads it back and
+The rev-2 nineteen were checked against the bakobo/errors catalog at the `bakobo-errors` pin —
+none collides with a shipped code, and three are boundary cases against heti's near-neighbors,
+called out as a comment where each is declared. `e.input.range.stream.f` is the one deliberate
+cross-repo *sharing* rather than a collision; see the comment on its declaration. Identity is the
+contract: a code's string, once shipped, never changes (dev/standards/error-codes.md, "A code's
+meaning and `args` signature never change once shipped").
+
+The count in the first paragraph is not decoration: `tests/test_errors.py` reads it back and
 compares it against what this module actually declares, having found the registry by type rather
 than by a hand-kept list. That gate exists because the hand-kept list drifted — it went on saying
 seventeen while `e.rule.stream.third-party.f` and `e.self.corrupt.schema.f` were minted, raised,
@@ -34,6 +38,27 @@ DID_INVALID = ErrorCode(
     args=("did",),
     hint="Check the did:webs method's MSI syntax for path segments and the AID production.",
 )
+
+STREAM_TOO_LARGE = ErrorCode(
+    "e.input.range.stream.f",
+    "The submitted publication stream is larger than this build will read.",
+    detail="The stream submitted for {did} exceeds the bound on {bound}, which is {limit} "
+    "bytes.",
+    args=("did", "bound", "limit"),
+    hint="The bound is a flood guard, far above any real publication. A submission near it is a "
+    "sign something is wrong with the stream rather than with the limit.",
+)
+# Deliberately the same code string the sibling did-webvh declares for the same refusal: a
+# submitted KERI CESR stream past the read bound, which a caller reacts to identically in both.
+# The error-codes standard's rule is one code per meaning across Bakobo, and "genuinely common
+# codes are defined once in the shared core registry and imported" — but bakobo/errors ships the
+# ErrorCode machinery and no shared catalog module to import from, so today each repo declares
+# its own. Graduating this pair into a shared registry is tick ~5cue.
+
+#: Each door's range code, by kind, so :func:`didwebs.bounds.read_bounded` can raise the right
+#: one without assembling a code string at runtime. The literal above is what a catalog
+#: extractor sees; this only points at it.
+TOO_LARGE = {"stream": STREAM_TOO_LARGE}
 
 STREAM_UNWALKABLE = ErrorCode(
     "e.input.format.stream.f",

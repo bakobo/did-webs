@@ -19,6 +19,11 @@ letting a traceback masquerade as a bad submission.
 **Who is running this** (panel finding SKP-F4). In phase 1 the operator asserts that the stream
 is the controller's: the pipeline establishes no submitter-to-AID binding, and none of this is
 network-facing. Both must land before any submission surface exists.
+
+**What crosses the boundary.** One thing: the stream file, through
+:func:`didwebs.bounds.open_stream` (constraint ``adyiw2mm``). The DID and the output directory
+come from the operator's own command line, which is why the census in ``tests/test_doors.py``
+exempts argparse with a written reason rather than waving it through.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ import sys
 
 from bakobo.errors import BakoboError
 
-from didwebs import assemble, document, errors, ingest, publish
+from didwebs import assemble, bounds, document, errors, ingest, publish
 from didwebs.did import parse as parse_did
 
 __all__ = ["main"]
@@ -75,15 +80,16 @@ def _parser() -> _Parser:
 
 def _publish(args) -> int:
     """The pipeline, end to end. Any refusal raises; nothing partial is written."""
+    # The DID is parsed before the file is opened because the door names the DID in its refusal,
+    # and because an unparseable DID is knowable without reading anything at all (size before
+    # shape before meaning, constraint adyiw2mm).
+    did = parse_did(args.did)
+
     try:
-        # ~3r4a nothing bounds this read: the whole submitted stream is resident before any of
-        # ingest.py's verification starts. Tolerable only while this is a local operator command.
-        with open(args.stream, "rb") as file:
-            stream = file.read()
+        stream = bounds.open_stream(args.stream, did)
     except OSError as exc:
         raise _Usage(f"The stream file {args.stream} could not be read: {exc.strerror}.") from exc
 
-    did = parse_did(args.did)
     with ingest.ingest(stream, did) as verified:
         doc = document.derive_document(verified, did)
         emitted = assemble.emit_stream(verified)

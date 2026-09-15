@@ -190,6 +190,7 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 
 | Code | Condition |
 |---|---|
+| `e.input.range.stream.f` | submitted stream exceeds the door's byte bound (constraint `adyiw2mm`) |
 | `e.input.format.did.f` | string is not a valid did:webs identifier |
 | `e.input.format.stream.f` | stream cannot be walked frame-by-frame (garbled CESR, unversioned frame) |
 | `e.feature.unsupported.serialization.f` | walkable v1 frame outside the JSON-only accepted set (CBOR/MGPK) |
