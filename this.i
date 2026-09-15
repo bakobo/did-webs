@@ -116,6 +116,44 @@ Production did:webs implementation on KERI = goal:
             hosted keri.cesr is a normalized equivalent, not a byte-identical copy, of the
             controller's submission.
 
+        A published alias carries this AID, which is what makes it self-certifying = constraint:
+          id: omz5lf7e
+          why: >
+            The spec constrains alsoKnownAs to DIDs with the same AID, and the designated-aliases
+            table admits exactly three kinds: other same-AID did:webs DIDs, same-AID did:web DIDs,
+            and did:keri:<AID>. That reads as a limitation and is a safety property. An AID is a
+            hash of its own inception event, so an alias carrying it is self-certifying — the
+            party who can produce the stream is the only party who can name it, and there is no
+            way for one controller to name a *different* party's identity in a document Bakobo
+            publishes. So document.also_known_as drops an entry of any other DID method rather
+            than publishing it, and raises e.rule.alias.aid.mismatch.f on a readable entry naming
+            another AID; ingest tolerates the unreadable entry deliberately (KRT-F4) so the rule
+            is enforced where the document is built.
+
+            Rejected widening the alias space to name a foreign identifier — a did:webvh, did:key
+            or did:scid DID — and rejected carrying the same-AID rule to the ToIP task force as a
+            spec gap. That was proposed here on 2026-09-14 (.ignored/webvh-recon-2026-09-14.md,
+            F7) and is refused: loosening the rule is what would introduce a vulnerability this
+            method does not have. The sibling bakobo/did-webvh measured the cost on 2026-09-15.
+            did:webvh does not constrain alsoKnownAs, and a binding check built there assumed a
+            key appearing in a log's updateKeys proved shared control of both identifiers. It does
+            not — updateKeys is a unilateral declaration by the log's own controller about who may
+            write its next entry, requiring no consent and no signature from the named key — so an
+            attacker could list a victim's PUBLIC key in their own log, submit the victim's PUBLIC
+            KEL, and have the gate certify the linkage with no victim secret involved. Reproduced
+            and confirmed. No amount of further checking recovers the property, because a
+            declaration that needs no consent cannot evidence one; the same-AID rule gets it from
+            the AID's derivation and costs nothing to check. Rejected, for the same reason,
+            publishing an unreadable entry under a caveat: a reader of a hosted did.json sees the
+            alias and not the caveat, which is org principle 8's fail-open.
+
+            Accepted tradeoff, and it is a real loss: a controller who also controls a did:webvh
+            DID cannot say so in the did:webs document Bakobo publishes. The link is expressible
+            only in the other direction, from the webvh document, where the controller's own
+            signature covers the assertion. Two tests hold the line rather than the docstring —
+            tests/test_document.py's foreign-method drop and its foreign-AID rejection — because
+            nothing else in the repo would notice the widening.
+
     Interop outranks estate keripy coherence = decision:
       id: gvimca
       why: >
