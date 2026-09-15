@@ -37,6 +37,10 @@ uv run didwebs publish --stream <keri.cesr> --did <did:webs:...> --out <dir>
 output directory. Refusal leaves no artifact tree behind: either both files appear or neither
 does. Run `uv run didwebs publish --help` for the full argument list.
 
+Producing that stream is the controller's job — Bakobo holds no customer keys — so
+[`docs/issuing-the-designated-aliases-acdc.md`](docs/issuing-the-designated-aliases-acdc.md)
+says what the stream must contain and how to get it out of `kli` or KERIA.
+
 ## License
 
 Apache-2.0.
