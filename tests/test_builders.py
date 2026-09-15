@@ -468,7 +468,7 @@ def test_endpoints_names_no_witness_because_none_can_be_built_in_process(tmp_pat
 
 
 def test_the_knob_registry_covers_every_name_the_brief_names():
-    """The brief's list, plus ``delegated:unanchored``, added later under tick ``~2kfu`` — the
+    """The brief's list, plus ``delegated:unanchored``, added later — the
     one delegation shape that reaches the seal check instead of passing it or stopping short."""
     assert set(builders.KNOBS) == {
         "base",

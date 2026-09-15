@@ -890,8 +890,8 @@ def test_attribution_maps_each_escrow_kind_to_its_own_leaf(tmp_path):
     branch of it gets reached in isolation. It used to be the only evidence for
     ``e.proof.stream.seal.f``, which is weaker: a table can be correct while nothing real ever
     lands in the escrow it reads. The ``delegated:unanchored`` fixture in the negative matrix
-    below now drives that leaf end to end, from a stream a delegator genuinely failed to anchor
-    (tick ``~2kfu``). ``anchor`` and ``frame`` still rest on planted entries alone.
+    below now drives that leaf end to end, from a stream a delegator genuinely failed to anchor.
+    ``anchor`` still rests on a planted entry alone.
     """
     stream, facts = fixture("base", tmp_path)
     walked = ingest.walk(stream)

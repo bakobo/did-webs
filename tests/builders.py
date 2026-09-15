@@ -701,7 +701,7 @@ def deactivated(tmp_path) -> Fixture:
 #: Every knob by name. The ingest brief's negative oracles index into this; the names are the
 #: shared vocabulary and must not be renamed. ``delegated`` appears three times: the brief asks
 #: for the delegated AID "with and without delegator KEL included", and ``:unanchored`` was added
-#: later (tick ~2kfu) because neither of those reaches the seal check — one passes it and the
+#: later because neither of those reaches the seal check — one passes it and the
 #: other stops short of it with ``e.input.missing.delegator.f``.
 KNOBS = {
     "base": base,
