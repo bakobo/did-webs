@@ -67,6 +67,40 @@ Production did:webs implementation on KERI = goal:
         inherit that ecosystem gap rather than papering over it with custody.
       children:
 
+        The submitted stream crosses one named, bounded door = constraint:
+          id: adyiw2mm
+          why: >
+            dev/standards/input-handling.md: nothing crosses a boundary unbounded, size before
+            shape before meaning, and the set of doors is kept complete by a test rather than by
+            memory. Until now this repo had no size axis at all — cli.py read the whole
+            submitted file and handed it to ingest, and a grep for a limit found only did.py's
+            RFC 1035 host and label lengths. Every check ingest makes is a judgment about what
+            the bytes *mean*, and none of it starts until they are resident, which is the
+            standard's named anti-pattern: verifying every signature in a stream of unbounded
+            length is a more expensive way to run out of memory. So the stream enters through
+            didwebs.bounds.open_stream, which reads one byte past the bound and refuses on the
+            overage rather than reading the file and then measuring it, and tests/test_doors.py
+            walks the package's AST so a later unguarded read fails at authoring time.
+
+            Only a size bound, and only one door. Rejected adding a frame-count or per-frame cap
+            alongside it: every CESR frame carries a version string and a body, so a byte bound
+            already bounds the frame count, and a second number chosen independently would be an
+            opinion about what a legitimate publication contains — which is exactly what the
+            standard says a flood guard must not be. Rejected bounding inside ingest.walk, where
+            the frames are: by then the bytes are in memory and the guard would be the
+            "bound that only exists downstream" anti-pattern. The number is 8 MiB, matching the
+            sibling did-webvh door for the same artifact: a KEL, its registry TELs and one
+            designated-aliases ACDC, where events run hundreds of bytes to a few kB, so this is
+            thousands of rotations and nowhere near what a real submission weighs.
+
+            Accepted tradeoff, and it is the reason this landed before it was needed: phase 1 is
+            a local operator command, so today the operator chose the file and a bound protects
+            nobody from anybody. The debt belongs in the same sentence as cli.py's other phase-1
+            caveat — that the pipeline establishes no submitter-to-AID binding — because both
+            must be in place BEFORE any submission surface exists. An endpoint with no bound is
+            a memory exhaustion an unauthenticated caller can trigger, and the door is far
+            cheaper to add now than to retrofit under that deadline.
+
         Hosted artifacts are derived from verified state, never submitted bytes = constraint:
           id: embuup
           why: >
