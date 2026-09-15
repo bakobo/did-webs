@@ -199,6 +199,10 @@ CREDENTIAL = None
 
 REPLY = "rpy"
 
+#: A registry inception. Its ``principal`` is the registry identifier its transaction log is
+#: keyed by, which is what emission needs to replay it.
+REGISTRY = "vcp"
+
 
 def _reply_bytes(db, said: str) -> bytes:
     """Re-assemble one BADA-accepted reply record from the state keripy stored for it.
@@ -284,10 +288,19 @@ def emit_stream(verified) -> bytes:
     # Registries first, each once — a credential's transaction log means nothing without the
     # registry's, and two credentials may share one. For the single-credential publication
     # phase 1 produces this is byte-for-byte the reference's interleaved order.
-    # ~2nj7 registries are derived from accepted credentials' regids; a registry the claimed
-    # AID incepted but never issued from would be owned yet unemitted (unverified code-reading
-    # claim — needs a two-registry fixture).
-    for regid in dict.fromkeys(creder.regid for creder in creders):
+    #
+    # Derived from the accepted `vcp` frames as well as from the credentials, not from the
+    # credentials alone. A registry the claimed AID incepted and anchored in its own KEL but
+    # never issued from is the claimed AID's own material by every ownership test the audit
+    # applies, so it is accepted and accounted for; deriving registries only from credentials
+    # would host the submission minus that frame, which is what constraint `embuup` and the
+    # frame accounting exist to prevent. Issuing registries come first so a spare one joins the
+    # block rather than displacing anything the reference's order puts there.
+    registries = dict.fromkeys(
+        [creder.regid for creder in creders]
+        + [frame.principal for frame in verified.frames if frame.ilk == REGISTRY]
+    )
+    for regid in registries:
         msgs.extend(_tel_bytes(reger, regid))
     for creder in creders:
         msgs.extend(_tel_bytes(reger, creder.said))

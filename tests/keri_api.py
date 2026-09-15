@@ -296,6 +296,37 @@ class Frame:
         return self.raw[self.body_end : self.end]
 
 
+def incept_registry(hab, regery, name: str, *, salt_raw: bytes):
+    """Incept and anchor a credential registry, issuing nothing from it.
+
+    ``assemble.issue_aliases`` creates a registry and issues in one call, which is the only
+    shape the product needs. A fixture that wants a registry the claimed AID owns but never
+    issued from has to stop halfway, so this repeats those steps and no others: make the
+    registry, anchor its ``vcp`` in the controller's KEL, drain until the Registrar has
+    first-seen it.
+
+    The nonce is fixed from ``salt_raw`` for the same reason ``REGISTRY_NONCE`` is fixed — two
+    registries built from otherwise identical inputs must be distinct, and both must be the
+    same from run to run.
+
+    Returns the ``Registry``; its ``regk`` is the identifier its transaction log is keyed by.
+
+    The ``didwebs`` import is local rather than module-scope so this toolkit stays importable
+    without the package under test, which is what lets ``keri_api`` be the layer that knows only
+    keripy.
+    """
+    from didwebs import assemble
+
+    machinery = assemble._Issuance(regery.hby, regery)
+    registry = regery.makeRegistry(
+        name=name, prefix=hab.pre, noBackers=True, nonce=salt(salt_raw), version=V1
+    )
+    machinery.registrar.incept(iserder=registry.vcp, anc=assemble._anchor(hab, registry.vcp))
+    while not machinery.registrar.complete(pre=registry.regk, sn=0):
+        machinery.drain()
+    return registry
+
+
 def v1_genus_violation(stream: bytes) -> str | None:
     """Where a CESR consumer pinned to genus v1 stops reading ``stream``, or None if it reads
     it all.

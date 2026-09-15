@@ -296,6 +296,35 @@ def test_the_emitted_reply_records_are_the_ones_the_audit_accepted(tmp_path):
     assert {body["a"]["eid"] for body in replies} == {facts["mailbox_aid"], facts["agent_aid"]}
 
 
+def test_a_registry_the_controller_never_issued_from_is_still_hosted(tmp_path):
+    """Hosting a submission minus a frame is the failure ``embuup`` exists to prevent.
+
+    A registry the claimed AID anchored in its own KEL passes every ownership test ingest
+    applies, so the publication is accepted with the spare registry's ``vcp`` accounted for. If
+    emission then derives its registries only from the credentials it emits, that accounted
+    frame is silently absent from what gets hosted — accepted, owned, and unpublished (tick
+    ``~2nj7``).
+    """
+    emitted_stream, submitted, facts = emitted("two_registries", tmp_path)
+
+    def registries(stream):
+        return {body["i"] for body in keri_api.bodies(stream) if body.get("t") == "vcp"}
+
+    assert registries(submitted) == {facts["regk"], facts["spare_regk"]}
+    assert registries(emitted_stream) == registries(submitted)
+
+
+def test_emission_orders_the_issuing_registry_before_a_spare_one(tmp_path):
+    """The reference's interleaved order is what the deployed ecosystem re-ingests, so a spare
+    registry joins the registry block rather than displacing anything in it."""
+    emitted_stream, _, facts = emitted("two_registries", tmp_path)
+    ilks = [body.get("t") for body in keri_api.bodies(emitted_stream)]
+    vcps = [body["i"] for body in keri_api.bodies(emitted_stream) if body.get("t") == "vcp"]
+
+    assert vcps == [facts["regk"], facts["spare_regk"]]
+    assert ilks.index("vcp") < ilks.index("iss")
+
+
 def test_the_emitted_stream_carries_only_v1_json_version_strings(tmp_path):
     """Constraint qbqfst on the emission path (design oracle 3)."""
     for knob in ("base", "delegated", "deactivated", "endpoints"):

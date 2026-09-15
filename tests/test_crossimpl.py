@@ -35,7 +35,12 @@ REQUIRED_VALUE = "required"
 
 #: Fixtures under this oracle (brief F §2.4). `delegated` is deliberately not here -- it drives
 #: `test_delegated_self_expiry` only, never the intersection comparison.
-ORACLE_FIXTURES = ("base", "endpoints", "deactivated")
+#:
+#: `two_registries` was added with the fix for tick ~2nj7, which made emission host a registry
+#: the controller incepted and never issued from. That changes the bytes the ecosystem receives,
+#: and gvimca says interop is what decides such a change -- so the new shape is put in front of
+#: the reference resolver rather than reasoned about.
+ORACLE_FIXTURES = ("base", "endpoints", "deactivated", "two_registries")
 
 
 def _venv_guard() -> None:

@@ -50,6 +50,11 @@ SCHEMA_SAID = schemaing.DES_ALIASES_SCHEMA_SAID
 #: ConditionalProof2022, which is why the pipeline must fail closed rather than truncate it.
 MULTI_CLAUSE_SITH = [["1/2", "1/2"], ["1/2", "1/2"]]
 
+#: Nonce seed for the second registry in ``two_registries``. Distinct from
+#: ``keri_api.REGISTRY_NONCE`` so the two registries have different identifiers, and fixed so
+#: both are the same from run to run.
+SPARE_REGISTRY_SALT = b"didwebs-spare-re"
+
 
 class Fixture(NamedTuple):
     """A publication stream and the facts a consuming test asserts against."""
@@ -110,6 +115,46 @@ def base(tmp_path) -> Fixture:
                 hab.pre,
                 acdc_said=issued.creder.said,
                 regk=issued.registry.regk,
+                ids=ids,
+                kel_sn=hab.kever.sner.num,
+            ),
+        )
+
+
+def two_registries(tmp_path) -> Fixture:
+    """A valid publication whose controller owns two registries and issued from only one.
+
+    This is a VALID stream, and that is the point. Incepting a registry and not yet issuing
+    from it is ordinary — a controller may prepare one, or retire a credential and keep the
+    registry — so the publication must be accepted, and then hosted *whole*. A registry the
+    claimed AID anchored in its own KEL is the claimed AID's own material by every ownership
+    test ingest applies, so dropping it from the hosted artifact would be publishing a
+    submission minus a frame, which is the failure ``embuup`` and the frame accounting exist to
+    prevent (tick ``~2nj7``).
+
+    The spare registry's ``vcp`` is placed with the other registry's, before the credential
+    transaction logs, which is the order ``dws/core/artifacting.py`` emits registries in.
+    """
+    with keri_api.scratch("two-registries", tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        ids = keri_api.designated_ids(hab.pre)
+        issued = _issue(hab, regery, ids)
+        spare = keri_api.incept_registry(hab, regery, "spare", salt_raw=SPARE_REGISTRY_SALT)
+
+        stream = bytearray(keri_api.kel_bytes(hab))
+        stream.extend(keri_api.tel_bytes(regery, issued.registry.regk))
+        stream.extend(keri_api.tel_bytes(regery, spare.regk))
+        stream.extend(keri_api.tel_bytes(regery, issued.creder.said))
+        stream.extend(keri_api.acdc_bytes(regery, issued.creder))
+
+        return Fixture(
+            bytes(stream),
+            _facts(
+                "two_registries",
+                hab.pre,
+                acdc_said=issued.creder.said,
+                regk=issued.registry.regk,
+                spare_regk=spare.regk,
                 ids=ids,
                 kel_sn=hab.kever.sner.num,
             ),
@@ -715,6 +760,7 @@ def deactivated(tmp_path) -> Fixture:
 #: other stops short of it with ``e.input.missing.delegator.f``.
 KNOBS = {
     "base": base,
+    "two_registries": two_registries,
     "without_acdc": without_acdc,
     "revoked_acdc": revoked_acdc,
     "attacker_acdc": attacker_acdc,

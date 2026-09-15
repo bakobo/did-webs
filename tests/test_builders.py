@@ -472,6 +472,7 @@ def test_the_knob_registry_covers_every_name_the_brief_names():
     one delegation shape that reaches the seal check instead of passing it or stopping short."""
     assert set(builders.KNOBS) == {
         "base",
+        "two_registries",
         "without_acdc",
         "revoked_acdc",
         "attacker_acdc",
