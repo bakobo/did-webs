@@ -135,6 +135,31 @@ Production did:webs implementation on KERI = goal:
             both: the two versions are independent, and only the emit side has an oracle, so
             the parse-side pin is load-bearing and invisible without this note.
 
+    Temporary keripy stores are contained per run, never identified by a shared namespace = constraint:
+      id: l7ws7hdt
+      why: >
+        keripy creates every temporary store with mkdtemp under the system temp directory, and
+        its close removes only the leaf of the path inside it — so both ingest and the fixtures
+        must remove the mkdtemp roots themselves. What this constraint settles is how a root is
+        *identified*. Measured 2026-09-15: five test oracles globbed /tmp/keri_* and compared
+        the set before and after an operation, which is a claim about a namespace that sixteen
+        bakobo repos share, because keripy's temp head is the system temp directory and nothing
+        namespaces it per project. One concurrent sibling suite reddened twelve tests here, and
+        every one of them failed on the glob rather than on the behavior under test — the
+        negative matrix was never mis-attributing an error code, which is what the symptom
+        looked like. Worse, tests/crossimpl/runner.py did not merely read that namespace: it
+        removed everything that appeared in it during its subprocess window, which against a
+        concurrent keripy run deletes another repo's live store. So: a root is derived from the
+        store's own TempHeadDir and refused if the store does not lie under it, the suite
+        repoints that head at a per-run directory, and no oracle reads a shared namespace.
+        Rejected keeping the globs and serializing suite runs across the estate — the
+        unsoundness is in the oracle rather than in the scheduling, and a rule about how to run
+        a suite cannot be enforced by that suite. Rejected filtering by name (globbing a
+        didwebs-specific prefix) because the prefix is keripy's to choose and not ours to rely
+        on. Accepted tradeoff: a keripy store opened outside the suite's own helpers now fails
+        loudly instead of littering silently — the failure direction we want, but a failure
+        where previously there was none.
+
     Resolver fails below TOAD, tolerates missing receipts above it = decision:
       id: wmoq5b
       why: >
