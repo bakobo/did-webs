@@ -1,6 +1,7 @@
 # Customer onboarding doc: how a controller issues the designated-aliases ACDC with third-party tooling (Signify/KERIA capability survey) — inherited ecosystem gap per this.i avuwzl
 kind: todo
 created: 2026-08-14T18:52Z
+closed: 2026-09-15T06:37Z
 
 - 2026-09-15T06:37Z DONE 2026-09-15 (4911e17): docs/issuing-the-designated-aliases-acdc.md, linked from README.
 
