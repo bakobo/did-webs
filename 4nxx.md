@@ -1,6 +1,7 @@
 # The suite is nondeterministic, and still strands /tmp/keri_* directories
 kind: todo
 created: 2026-09-15T04:21Z
+closed: 2026-09-15T05:58Z
 
 - 2026-09-15T04:21Z Two consecutive full runs of the SAME clean tree on 2026-09-15 gave different results: 7 failed/865 passed, then 2 failed/870 passed, out of 872 either way. Failures land in test_ingest.py::test_the_negative_matrix_attributes_the_exact_code[...] (scope_miss, revoked_acdc, tampered_sig, forked_kel, stranger_bundle vary between runs) and test_builders.py::test_building_a_fixture_leaves_no_keri_temp_directory. Every one of them PASSES when run in isolation, so it is ordering or shared state, not a broken assertion.
 
