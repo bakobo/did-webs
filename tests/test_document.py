@@ -312,12 +312,18 @@ def test_an_alias_naming_another_aid_fails_the_publication(tmp_path):
 def test_a_designation_of_another_did_method_is_not_published_as_an_alias():
     """An entry this method cannot parse cannot be checked against the same-AID rule either.
     Publishing it anyway would put an unverifiable alias under Bakobo's domain, so it is
-    dropped — the same fail-closed reading ingest applies when it declines to be scoped by it."""
+    dropped — the same fail-closed reading ingest applies when it declines to be scoped by it.
+
+    `did:webvh:` is named explicitly because it is the method someone will actually reach for
+    (constraint omz5lf7e, which refuses to widen the alias space for it) and because its prefix
+    is one character from `did:web:` — a reader checking the guard by eye may not see that the
+    two diverge at the colon, so the case is pinned here rather than argued."""
     aliases = document.also_known_as(
         [
             f"did:web:example.com:{SPEC_AID}",
             f"did:example:{SPEC_AID}",
             f"did:webs:not a host:{SPEC_AID}",
+            "did:webvh:QmS7oHrHNCkMjfZCVaLKG3s5H5fRUKjNkcxaSkjXCRFVQb:example.com",
         ],
         parsed(),
     )

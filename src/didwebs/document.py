@@ -315,6 +315,10 @@ def also_known_as(ids: list, did) -> list:
     other DID method is dropped rather than published: its AID binding cannot be checked, and
     publishing an unverifiable alias under Bakobo's domain would fail open.
 
+    Constraint ``omz5lf7e`` holds the second rule shut: same-AID is what makes an alias
+    self-certifying, so widening this to name a foreign identifier is the vulnerability rather
+    than the missing feature. Read that node before relaxing either branch below.
+
     Raises:
         BakoboError: ``e.rule.alias.aid.mismatch.f`` when a readable entry names another AID.
     """
