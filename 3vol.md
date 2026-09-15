@@ -9,3 +9,6 @@ BUMP ATTEMPTED AND REVERTED: 106 of 872 tests fail on 03f7d2d3. Root cause is ex
 Fix shape if we proceed: stop calling signing.serialize at assemble.py:295 and :314, call messagize(..., gvrsn=V1) directly from a local helper. Small edit; the risk is entirely in what the oracle says about the couples-vs-triples change. Diagnosis probe: .ignored/probe-pinbump.py.
 
 Also a finding independent of the bump -- see the new tick on the qbqfst oracle's blind spot.
+- 2026-09-15T06:09Z Retitled 2026-09-15: the old title named heti's e77335c pin, which the 2026-08-28 note had already corrected to f663ecd on an unmerged branch. The live question is bakobo/stack, not heti.
+
+Unblocked one step today: ~3a5h is closed, so the genus regression now has a red test AT THE EMIT SITE (keri_api.v1_genus_violation, asserted at every generated-stream assertion). A re-attempt of the bump will therefore fail in test_assemble/test_builders naming the ACDC frame, instead of presenting as a confusing e.input.format.stream.f from ingest.walk 3 frames in. The remaining blocker is unchanged and is the interop one: does the 1.2.13 ecosystem accept a SealSourceCouples attachment where it has always seen SealSourceTriples? tests/crossimpl is the only thing that can answer it, and gvimca says that answer outranks estate coherence.
