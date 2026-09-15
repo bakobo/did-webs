@@ -1,4 +1,4 @@
-"""The temp-store containment contract (constraint ``l7ws7hdt``, tick ``~4nxx``).
+"""The temp-store containment contract (constraint ``l7ws7hdt``).
 
 keripy makes every temporary store with ``mkdtemp`` under its class's ``TempHeadDir`` and, on
 close, removes only the leaf of the path inside it — so whoever opened the store owns removing
