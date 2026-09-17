@@ -154,6 +154,131 @@ Production did:webs implementation on KERI = goal:
             tests/test_document.py's foreign-method drop and its foreign-AID rejection — because
             nothing else in the repo would notice the widening.
 
+        A path segment is refused for what it means to a filesystem, and containment is
+        re-checked at the join = constraint:
+          id: a2sbz34i
+          why: >
+            The did:webs `path` production is `1*(ALPHA / DIGIT / "-" / "_" / "~" / ".")`, and
+            did.py transcribed it faithfully as `^[A-Za-z0-9_~.-]+$`. That charset matches `..`.
+            Every path segment becomes a directory under the output root in
+            publish.artifact_dir, so `did:webs:example.com:..:..:E<AID>` parsed cleanly and
+            published did.json and keri.cesr two levels ABOVE the directory the web server
+            serves. Reproduced end to end on 2026-09-17 before any fix: parse succeeded, the
+            artifacts landed outside the served root, and the DID composed back to itself so
+            nothing downstream could notice. A second, quieter instance of the same defect: a `.`
+            segment collapses in the filesystem but not in compose(), so two distinct,
+            separately-authorized DIDs named one artifact directory and whichever published
+            second silently replaced the other's did.json with a document naming a different
+            identifier.
+
+            So: `.` and `..` are refused by name, as are `/`, a backslash, U+0000, and leading or
+            trailing whitespace; and publish.artifact_dir resolves the join and refuses a
+            directory that does not lie under the output root.
+
+            Where this came from, and the lesson that matters more than the bug. The sibling
+            bakobo/webvh-gate already carried every one of these refusals, in the same function
+            position — its did.py:_path_segment — and ships them as the conformance vectors
+            negative-path-traversal-did and negative-pct-encoded-traversal. The two repos
+            implement the same shape: a DID whose colon-separated segments become directories
+            under a web root. What travelled between them was the FRAMEWORK — the value type, the
+            normalized-versus-raw discipline, the door census, the error registry, the shape of
+            the test file. The specific refusal did not. A framework propagates because it is
+            visible in the structure of the file you are copying; a refusal propagates only if
+            somebody remembers it, and nobody did. Treat a sibling's negative vectors as part of
+            the thing being ported, not as its test suite.
+
+            Rejected porting webvh-gate's percent-decode along with its refusals. There,
+            webvh-path-segment is DID Core's `idchar`, which admits `pct-encoded`, so `%2e%2e` is
+            a SPELLING of `..` and can only be caught after decoding exactly once; here the
+            production has no pct-encoded alternative at all, so `%2e%2e` is a segment containing
+            a `%` and the charset refuses it outright. Adding a decode would start accepting
+            identifiers the spec does not define and would rewrite them on the way in —
+            dev/standards/input-handling.md's "door that normalizes silently". A test pins the
+            premise instead (test_the_path_charset_admits_no_percent), so if the spec ever gains
+            pct-encoded the decode is ported at that moment rather than rediscovered from another
+            traversal.
+
+            Rejected leaving the refusal to the charset alone. `/`, backslash, U+0000 and
+            whitespace are all already outside the spec's charset, so the three checks that name
+            them are unreachable today and would be dead code if they ran after it. They run
+            BEFORE it deliberately, which is what makes them reachable and tested, and the reason
+            is that a refusal which is only an accident of how narrow a production happens to be
+            disappears the day the production widens — silently, in the same edit. This spec is
+            still moving (the module's own "soft spot 3" is already an argument for widening the
+            AID charset), so that day is foreseeable. Refusing by name survives it.
+
+            Rejected fixing only the parser. The parser is the necessary half and the right place
+            for an operator-facing error, but it is a validator far from the sink:
+            publish.artifact_dir takes `did` structurally, so nothing in its signature says the
+            value came through did.parse, and the properties it depends on are not "this matched
+            the ABNF". Those are different claims in different modules, and they drift. Rejected
+            the narrower alternative of requiring a parsed DID at the join — a type check, or
+            re-parsing did.raw — which moves the same trust one function along without ever
+            checking the properties that matter, and `raw` is explicitly non-authoritative.
+
+            THE SINK RELIES ON TWO PROPERTIES, AND THE FIRST REVISION OF THIS CONSTRAINT CHECKED
+            ONE. Containment is that the directory stays under the output root. Injectivity is
+            that two DIDs which differ name two directories — the `.`-collision half of the
+            finding above. The first revision resolved the join and compared it against the root,
+            which establishes containment while DESTROYING THE EVIDENCE for injectivity:
+            Path.resolve() normalizes `a/./b` and `a/b/../b` to `a/b` before the comparison runs,
+            so the sink was blind to exactly the aliasing the parser refusal had been added for.
+            Copilot raised it on PR #5 and measurement confirmed it: ('a',), ('a','.'), ('.','a'),
+            ('a','..','a') and ('a','b','..') were all accepted and all five landed on one
+            directory. This is this constraint's own generalization — naming the checker is not
+            naming the property — turned on the fix that generalization justified. A check that
+            NORMALIZES BEFORE IT COMPARES cannot see an aliasing defect, because normalizing is
+            what aliasing does; the check has to run on the components, before anything is joined.
+
+            So the check is per component, before the join: each must be a single directory name
+            — not empty, not `.` or `..`, carrying no separator. Total and syntactic, a claim
+            about the value rather than about the filesystem, so nothing can race it. Containment
+            then holds BY CONSTRUCTION, since a join of single directory names cannot leave the
+            root, and is asserted as a property in the suite rather than re-checked in a branch
+            no input could reach. Rejected keeping the resolve-and-compare alongside it: besides
+            being unreachable, where it would NOT be unreachable it would be unsound. Resolving
+            follows symlinks, so it reads as a guard against a symlink planted inside the served
+            tree, and it is not one — artifact_dir checks and publish creates the directory
+            afterwards, so anyone who can plant the symlink can plant it in that window. A guard
+            that loses a race it appears to win is worse than no guard, and the adversary it
+            imagines can already write the artifacts directly.
+
+            The refusal carries e.self.corrupt.did.f, a registry code, not the bare RuntimeError
+            the first revision used. That revision cited ingest._temp_root's bare RuntimeError as
+            precedent; the citation does not hold and retiring it is worth recording. That line
+            arrived on 2026-09-15, two days earlier, in the commit implementing l7ws7hdt — and
+            l7ws7hdt's own `why` argues at length about how a temp root is IDENTIFIED and says
+            nothing whatever about what type to raise. So the exception type there was never
+            decided, only written; treating it as a convention would have laundered one unargued
+            choice into a house rule, against AGENTS.md's actual standard that every error carries
+            a stable symbolic code and a retryability disposition. Rejected `self` vs `input` in
+            favour of `self`: the component is decidable from the value alone, which is normally
+            the `input` test, but by this point the value is not a request — did.parse is
+            contracted to have refused it — so reporting e.input.format.did.f would tell an
+            operator their DID is malformed when no such DID could have reached the CLI. Rejected
+            reusing e.self.unknown.f, which Copilot offered as the alternative: the error-codes
+            standard reserves that leaf for a failure we cannot attribute AT ALL, and this one is
+            attributed precisely, to a named component of a named DID. Spending the unattributable
+            code on an attributable fault is what makes it stop meaning anything.
+
+            The door census exemption for cli.py:main was rewritten in the same change, because
+            it had argued the opposite and half the value here is in retiring that argument. It
+            claimed argv is "not attacker-controlled in a phase-1 local operator command" and
+            that the DID "is checked where it is used ... through did.parse". Both are wrong in
+            ways that read as reasonable. A value can be operator-supplied and attacker-chosen at
+            the same time: the DID names the CUSTOMER's AID and host, so the operator is a
+            transcription step and not a source of trust, and where a value entered says nothing
+            about who chose it. And naming the checker is not naming the property: did.parse
+            decided ABNF conformance while the property the sink relied on was containment, which
+            nothing checked — the DID was valid, checked, and unconstrained in the way that
+            mattered.
+
+            Accepted tradeoff: a controller whose deployment path legitimately contains a segment
+            that is exactly `.` or `..` cannot publish it. No such deployment exists — no web
+            server can serve one distinguishably — and the two dot segments are the only thing
+            refused, so `v1.0`, `.well-known` and `...` all still parse. A regression test holds
+            that line, because over-refusing here would be the quieter failure.
+
     Interop outranks estate keripy coherence = decision:
       id: gvimca
       why: >

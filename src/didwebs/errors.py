@@ -7,9 +7,10 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 20 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
+The 21 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
 from that table's rev 2 (2026-08-14); `e.input.range.stream.f` was added with the stream door
-(constraint `adyiw2mm`). The table carries fewer rows than codes, because
+(constraint `adyiw2mm`), and `e.self.corrupt.did.f` with the artifact-join containment check
+(constraint `a2sbz34i`). The table carries fewer rows than codes, because
 `e.proof.stream.*.f` is written once and names its four leaves — `sig`, `seal`, `anchor`,
 `frame` — in the same cell, the audit picking between them by which escrow held the frame.
 
@@ -222,6 +223,30 @@ THRESHOLD_UNSUPPORTED = ErrorCode(
     args=("aid",),
     hint="Simplify to a single weighted clause, or wait for a follow-on release.",
 )
+
+ARTIFACT_PATH_CORRUPT = ErrorCode(
+    "e.self.corrupt.did.f",
+    "A DID reached the artifact join with a component that is not one directory name.",
+    detail="The component {component} of the DID for {aid} is not a single directory name, so "
+    "the artifact directory it names is not a location this package will write to.",
+    args=("component", "aid"),
+    hint="This is a fault in didwebs, not in your submission: didwebs.did.parse refuses these "
+    "components, so a value carrying one did not come through it. Report it with the command "
+    "that produced it.",
+)
+# `self`, not `input`, and the locus is the whole argument. The component is decidable from the
+# value alone, which is normally the `input` test (dev/standards/error-codes.md, "input vs
+# everything requiring a lookup"). But by the time it reaches publish.artifact_dir the value is
+# not a request: did.parse is contracted to have refused it (constraint a2sbz34i), so a malformed
+# component here means that contract broke inside this process. Reporting e.input.format.did.f
+# would tell an operator their DID is malformed when no such DID could have reached the CLI,
+# sending them to fix something that was never theirs. Same locus distinction the standard draws
+# for self.config -- our own value rather than the world's.
+#
+# Not e.self.unknown.f either, which Copilot proposed as the alternative on PR #5: the standard
+# reserves that leaf for "a failure we cannot attribute at all" (error-codes.md, on the `self`
+# row), and this one is attributed precisely -- to a named component of a named DID. Borrowing
+# the unattributable code for an attributable fault spends the one leaf that has to stay honest.
 
 SCHEMA_CORRUPT = ErrorCode(
     "e.self.corrupt.schema.f",

@@ -55,7 +55,10 @@ The fork oracle asserts the conflict is detected either way.
 
 - `didwebs/did.py` — the `WebsDid` value type. Parse/compose/validate per the spec's MSI
   section: path segments and the AID follow the spec ABNF (normative there; the AID production
-  admits only transferable digest codes — soft spot 3, carried upstream); the **host is
+  admits only transferable digest codes — soft spot 3, carried upstream), **plus the refusals
+  the ABNF does not make** — a segment that is `.` or `..`, carries `/`, a backslash or
+  `\x00`, or begins or ends with whitespace, is refused by name rather than by charset
+  (constraint `a2sbz34i`, ported from the sibling `bakobo/webvh-gate`); the **host is
   validated against the RFCs the spec makes normative** — RFC 3986 `host` (including
   IP-literals) via a mature parsing library, with RFC 1035/1123 checks for reg-names — because
   the spec marks its own host charset "for illustration only" (SPC-F4). Port is
@@ -148,7 +151,10 @@ The fork oracle asserts the conflict is detected either way.
 - `didwebs/publish.py` — `publish(out_root, did, doc, emitted_stream)`: writes
   `<out_root>/<path…>/<aid>/did.json` and `keri.cesr`, atomically (write-tempfile-rename), so
   update and deactivate are the same operation: re-ingest a newer stream, regenerate, overwrite
-  in place (`#### Update`).
+  in place (`#### Update`). `artifact_dir` checks every component before joining and refuses
+  one that is not a single directory name, independently of what the parser allowed — the sink
+  needs both containment under `out_root` and injectivity (two DIDs that differ naming two
+  directories), and a validator and its sink drift apart (constraint `a2sbz34i`).
 - `didwebs/cli.py` — **one product verb** (SKP-F3): `didwebs publish --stream <file> --did
   <did> --out <dir>` — ingest→derive→emit→publish, exit nonzero with the error code on any
   failure. The keystore side is deliberately not a console verb: fixtures and demos invoke
@@ -205,6 +211,7 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 | `e.rule.stream.third-party.f` | a frame concerns an identifier the stream is not publishing — keripy accepts it fine; the no-chaff norm is ours |
 | `e.feature.unsupported.key.alg.f` | non-Ed25519 key in current key state (decision `3woefn`) |
 | `e.feature.unsupported.threshold.f` | multi-clause (conjunctive) `kt` — unrepresentable in `ConditionalProof2022` |
+| `e.self.corrupt.did.f` | a DID reached `publish.artifact_dir` with a component that is not one directory name — `did.parse` refuses these, so reaching the join means our own contract broke, never the submitter's (constraint `a2sbz34i`) |
 | `e.self.corrupt.schema.f` | the bundled designated-aliases schema fails SAID recomputation at load — our packaging fault, never the submitter's |
 | `e.self.unknown.f` | unattributable internal failure |
 
