@@ -210,16 +210,56 @@ Production did:webs implementation on KERI = goal:
             Rejected fixing only the parser. The parser is the necessary half and the right place
             for an operator-facing error, but it is a validator far from the sink:
             publish.artifact_dir takes `did` structurally, so nothing in its signature says the
-            value came through did.parse, and the property it depends on is not "this matched the
-            ABNF" but "the join stays under the root". Those are different claims in different
-            modules, and they drift. Rejected the narrower alternative of requiring a parsed DID
-            at the join — a type check, or re-parsing did.raw — which moves the same trust one
-            function along without ever checking the property that matters, and `raw` is
-            explicitly non-authoritative. The containment refusal raises a bare RuntimeError
-            rather than a registry code, matching ingest._temp_root's refusal of a store outside
-            its temp head: no submission can reach it now that the parser refuses these segments,
-            so it reports a fault in this package (cli.py renders it e.self.unknown.f) rather
-            than a verdict on anybody's input.
+            value came through did.parse, and the properties it depends on are not "this matched
+            the ABNF". Those are different claims in different modules, and they drift. Rejected
+            the narrower alternative of requiring a parsed DID at the join — a type check, or
+            re-parsing did.raw — which moves the same trust one function along without ever
+            checking the properties that matter, and `raw` is explicitly non-authoritative.
+
+            THE SINK RELIES ON TWO PROPERTIES, AND THE FIRST REVISION OF THIS CONSTRAINT CHECKED
+            ONE. Containment is that the directory stays under the output root. Injectivity is
+            that two DIDs which differ name two directories — the `.`-collision half of the
+            finding above. The first revision resolved the join and compared it against the root,
+            which establishes containment while DESTROYING THE EVIDENCE for injectivity:
+            Path.resolve() normalizes `a/./b` and `a/b/../b` to `a/b` before the comparison runs,
+            so the sink was blind to exactly the aliasing the parser refusal had been added for.
+            Copilot raised it on PR #5 and measurement confirmed it: ('a',), ('a','.'), ('.','a'),
+            ('a','..','a') and ('a','b','..') were all accepted and all five landed on one
+            directory. This is this constraint's own generalization — naming the checker is not
+            naming the property — turned on the fix that generalization justified. A check that
+            NORMALIZES BEFORE IT COMPARES cannot see an aliasing defect, because normalizing is
+            what aliasing does; the check has to run on the components, before anything is joined.
+
+            So the check is per component, before the join: each must be a single directory name
+            — not empty, not `.` or `..`, carrying no separator. Total and syntactic, a claim
+            about the value rather than about the filesystem, so nothing can race it. Containment
+            then holds BY CONSTRUCTION, since a join of single directory names cannot leave the
+            root, and is asserted as a property in the suite rather than re-checked in a branch
+            no input could reach. Rejected keeping the resolve-and-compare alongside it: besides
+            being unreachable, where it would NOT be unreachable it would be unsound. Resolving
+            follows symlinks, so it reads as a guard against a symlink planted inside the served
+            tree, and it is not one — artifact_dir checks and publish creates the directory
+            afterwards, so anyone who can plant the symlink can plant it in that window. A guard
+            that loses a race it appears to win is worse than no guard, and the adversary it
+            imagines can already write the artifacts directly.
+
+            The refusal carries e.self.corrupt.did.f, a registry code, not the bare RuntimeError
+            the first revision used. That revision cited ingest._temp_root's bare RuntimeError as
+            precedent; the citation does not hold and retiring it is worth recording. That line
+            arrived on 2026-09-15, two days earlier, in the commit implementing l7ws7hdt — and
+            l7ws7hdt's own `why` argues at length about how a temp root is IDENTIFIED and says
+            nothing whatever about what type to raise. So the exception type there was never
+            decided, only written; treating it as a convention would have laundered one unargued
+            choice into a house rule, against AGENTS.md's actual standard that every error carries
+            a stable symbolic code and a retryability disposition. Rejected `self` vs `input` in
+            favour of `self`: the component is decidable from the value alone, which is normally
+            the `input` test, but by this point the value is not a request — did.parse is
+            contracted to have refused it — so reporting e.input.format.did.f would tell an
+            operator their DID is malformed when no such DID could have reached the CLI. Rejected
+            reusing e.self.unknown.f, which Copilot offered as the alternative: the error-codes
+            standard reserves that leaf for a failure we cannot attribute AT ALL, and this one is
+            attributed precisely, to a named component of a named DID. Spending the unattributable
+            code on an attributable fault is what makes it stop meaning anything.
 
             The door census exemption for cli.py:main was rewritten in the same change, because
             it had argued the opposite and half the value here is in retiring that argument. It
