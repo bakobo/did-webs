@@ -14,6 +14,10 @@ re-ingest a newer stream, regenerate, overwrite in place. Nothing is ever remove
 forbids making a published DID's resources unavailable, since a resolver cannot tell a
 withdrawn DID from an offline host.
 
+**Where the artifacts may not land.** That location is derived from a value a customer chose, so
+the directory it names is checked against the output root here, at the join, and not only in the
+parser that produced the DID — see :func:`artifact_dir` (constraint ``a2sbz34i``).
+
 **Where the guarantee stops.** Two files cannot be renamed in one atomic step on a POSIX
 filesystem. Each artifact is wholly old or wholly new; a crash between the two renames leaves a
 document and a stream from different publications. The stream is renamed first, so the mix that
@@ -39,8 +43,42 @@ def artifact_dir(out_root, did) -> Path:
 
     The host and port address the web server rather than the filesystem, so only the path
     segments and the AID become directories.
+
+    **Why the containment check is here as well as in the parser** (constraint ``a2sbz34i``).
+    ``did.parse`` refuses a ``.`` or ``..`` segment, which is the necessary half and where the
+    refusal belongs: it is the earliest point the value is known to be wrong, and it produces an
+    error an operator can act on. It is not the sufficient half. This function takes ``did``
+    structurally — anything carrying ``.path`` and ``.aid`` — so nothing in its own signature or
+    its callers says the value came through the parser, and the property it actually depends on
+    is not "this string matched the ABNF" but "the join stays under the root". Those are two
+    different claims, checked in two different modules, and the way they fail is by drifting:
+    the spec's ``path`` production widens, or a caller constructs a :class:`~didwebs.did.WebsDid`
+    directly (the test suite does), and the parser's refusal stops covering the sink. Containment
+    belongs at the join, where the property is the one being relied on.
+
+    The alternative considered and rejected was to require a parsed DID here — a type check, or
+    re-parsing ``did.raw``. It moves the same trust one function further along without ever
+    checking the property that matters, and ``raw`` is explicitly non-authoritative.
+
+    Raises:
+        RuntimeError: the artifact directory does not lie under ``out_root``. A bare exception
+            rather than a registry code, matching ``ingest._temp_root``'s refusal of a store
+            outside its own temp head: this cannot be reached by any submission, only by a caller
+            that bypassed the parser, so it is a fault in this package rather than a verdict on
+            anybody's input — which is exactly what ``cli.py`` reports it as (``e.self.unknown.f``).
+
+    Returns:
+        Path: the resolved artifact directory. Resolved rather than merely joined, because the
+        resolved path is the one the containment claim is about, and returning the unresolved
+        spelling would hand the caller a path that was never the thing checked.
     """
-    return Path(out_root).joinpath(*did.path, did.aid)
+    root = Path(out_root).resolve()
+    directory = root.joinpath(*did.path, did.aid).resolve()
+    if not directory.is_relative_to(root):
+        raise RuntimeError(
+            f"the artifact directory for {did.aid} resolves outside the output root {root}"
+        )
+    return directory
 
 
 def _write(directory: Path, name: str, payload: bytes) -> Path:

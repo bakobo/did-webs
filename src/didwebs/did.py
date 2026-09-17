@@ -22,6 +22,14 @@ no information once decoded, ``path``/``aid`` case-sensitive as spec'd) and keep
 input string on ``raw`` -- present for diagnostics, excluded from equality and hashing via
 ``field(compare=False)``. Never compare ``raw`` strings; compare :class:`WebsDid` instances.
 
+**Path segments are refused for what they mean downstream (constraint ``a2sbz34i``).** The spec's
+``path`` charset admits ``.``, and therefore admits ``..``, which every filesystem reads as the
+parent directory — so a DID could name an artifact directory outside the one its host serves.
+:func:`_validate_path_segment` refuses the two dot segments and the separator characters by name,
+ported from the sibling ``bakobo/webvh-gate``. It is deliberately *not* the only guard: the
+matching containment check lives at the join in ``publish.artifact_dir``, because a validator and
+its sink drift apart.
+
 **KRT-F6, the parse-side half.** :func:`has_nontransferable_code` is a pure derivation-code
 test (keripy's :data:`~keri.core.coring.NonTransDex`), and :func:`parse` uses it to reject a
 non-transferable AID (e.g. code ``B``). This is the *only* abandonment-adjacent thing this
@@ -60,6 +68,15 @@ _SAID_512_RE = re.compile(r"^0[DEFG][A-Za-z0-9_-]{86}$")
 
 # --- path segment (spec `path = 1*(ALPHA / DIGIT / "-" / "_" / "~" / ".")`). ---
 _PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_~.-]+$")
+
+# --- path segments reserved by every filesystem there is, and by RFC 3986 `dot-segment`. ---
+_DOT_SEGMENTS = frozenset({".", ".."})
+
+# --- characters a segment must not carry, whatever the charset above happens to admit. ---
+_FORBIDDEN_IN_SEGMENT = frozenset("/\\\x00")
+
+# --- a DID URL's own delimiters, which a *DID* never contains. ---
+_DID_URL_DELIMITERS = frozenset("/?#")
 
 # --- host, RFC 3986 productions via rfc3986's ABNF-derived regex fragments. ---
 _REG_NAME_RE = re.compile("^" + _rfc3986_abnf.REG_NAME + "$")
@@ -114,6 +131,47 @@ def _validate_aid(aid: str) -> None:
         raise _Invalid("aid carries a non-transferable derivation code")
     if not (_SAID_256_RE.match(aid) or _SAID_512_RE.match(aid)):
         raise _Invalid("aid is not a valid said-256 or said-512 SAID")
+
+
+def _validate_path_segment(segment: str) -> None:
+    """Refuse a path segment, by name, for what it would mean downstream.
+
+    Every path segment becomes a directory under the output root (``publish.artifact_dir``) and a
+    segment of the hosting URL (:meth:`WebsDid.did_json_url`), so the questions this asks are
+    about those two destinations rather than about the ABNF. Ported wholesale from the sibling
+    ``bakobo/webvh-gate``'s ``did.py:_path_segment``, which already refused every one of these;
+    ``did:webvh`` and ``did:webs`` share the shape — colon-separated segments that become
+    directories under a web root — and only the framework had travelled between them.
+
+    **Why these run before the charset rather than after.** The first three refusals are about
+    meaning, not shape, and only the ``.``/``..`` one is reachable today: the spec's ``path``
+    charset already excludes ``/``, a backslash, ``\\x00`` and whitespace, so those three checks
+    would be dead code placed after it. They are placed first deliberately, and that is the whole
+    argument for keeping them. The charset is a transcription of an ABNF production in a spec
+    that is still moving — the module docstring's "soft spot 3" is already a case for widening it
+    — and a refusal that is only an accident of how narrow that production happens to be is a
+    refusal that disappears the day it widens, silently, in the same edit. Refusing by name
+    survives that; refusing by side effect does not. That is the sibling's lesson applied to this
+    module's own future rather than to its past.
+
+    **No percent-decode, deliberately.** webvh-gate decodes exactly once before these tests,
+    because ``webvh-path-segment`` is DID Core's ``idchar`` and admits ``pct-encoded`` — there,
+    ``%2e%2e`` is a spelling of ``..`` and can only be caught after decoding. ``did:webs``'s
+    ``path`` production carries no ``pct-encoded`` alternative at all, so ``%2e%2e`` is not a
+    spelling of anything: it is a segment containing a ``%``, which the charset refuses outright.
+    Introducing a decode here would accept identifiers the spec does not define and rewrite them
+    on the way in, which is dev/standards/input-handling.md's "door that normalizes silently".
+    ``tests/test_did.py:test_the_path_charset_admits_no_percent`` fails if that premise ever
+    changes.
+    """
+    if segment != segment.strip():
+        raise _Invalid(f"path segment {segment!r} begins or ends with whitespace")
+    if _FORBIDDEN_IN_SEGMENT & set(segment):
+        raise _Invalid(f"path segment {segment!r} contains '/', a backslash, or U+0000")
+    if segment in _DOT_SEGMENTS:
+        raise _Invalid("path segment is '.' or '..'")
+    if not _PATH_SEGMENT_RE.match(segment):
+        raise _Invalid(f"path segment {segment!r} is not a valid path segment")
 
 
 def _validate_host(host: str) -> str:
@@ -253,13 +311,20 @@ def parse(raw: str) -> WebsDid:
         if not raw.startswith(_PREFIX):
             raise _Invalid("missing the 'did:webs:' prefix")
 
+        # A DID URL's path, query and fragment are not part of the DID, so a string carrying one
+        # is not a did:webs identifier — and this is the only place their delimiters could appear
+        # unescaped. webvh-gate makes the same check for the same reason; here it is also the
+        # outermost of the containment refusals, since a `/` anywhere in the identifier is the
+        # one character that could split a segment into two after the colons are replaced.
+        if _DID_URL_DELIMITERS & set(raw):
+            raise _Invalid("a DID URL path, query or fragment is not part of the DID")
+
         host, port, path_segments, aid = _split(raw)
 
         host = _validate_host(host)
 
         for segment in path_segments:
-            if not _PATH_SEGMENT_RE.match(segment):
-                raise _Invalid(f"path segment {segment!r} is not a valid path segment")
+            _validate_path_segment(segment)
 
         _validate_aid(aid)
     except _Invalid as exc:

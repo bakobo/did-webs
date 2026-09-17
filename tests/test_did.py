@@ -340,6 +340,99 @@ def test_parse_rejects_non_str_input():
 
 
 # ---------------------------------------------------------------------------
+# Path segments that mean something to a filesystem (constraint `a2sbz34i`)
+#
+# Ported from the sibling bakobo/webvh-gate, whose `did.py:_path_segment` already carried every
+# refusal below and whose conformance corpus carries them as the negative vectors
+# `negative-path-traversal-did` and `negative-pct-encoded-traversal`. The two implementations
+# share a shape — a DID whose colon-separated path segments become directories under a web
+# root — and the refusal did not travel with the shape. This block is that corpus, ported.
+#
+# The reproduction these pin, verified against the pre-fix parser: a `..` segment passed
+# `_PATH_SEGMENT_RE` (which admits `.`), so `publish.artifact_dir` joined it into the artifact
+# directory and `publish` wrote `did.json` and `keri.cesr` two levels above the directory the web
+# server serves.
+# ---------------------------------------------------------------------------
+
+
+TRAVERSAL_DIDS = [
+    # `negative-path-traversal-did`, the vector verbatim in did:webs spelling.
+    ("two `..` segments, the ported vector", f"did:webs:example.com:..:..:{FULL_EXAMPLE_AID}"),
+    ("one `..` segment", f"did:webs:example.com:..:{FULL_EXAMPLE_AID}"),
+    ("`..` between two ordinary segments", f"did:webs:example.com:a:..:b:{FULL_EXAMPLE_AID}"),
+    ("`..` as the last segment before the aid", f"did:webs:example.com:a:..:{FULL_EXAMPLE_AID}"),
+    # The `.` half: it collapses in the filesystem but not in compose(), so before the fix two
+    # distinct DIDs named one artifact directory (see test_publish.py).
+    ("a lone `.` segment", f"did:webs:example.com:.:{FULL_EXAMPLE_AID}"),
+    ("`.` between two ordinary segments", f"did:webs:example.com:a:.:b:{FULL_EXAMPLE_AID}"),
+    # `negative-pct-encoded-traversal`. Unreachable through did:webs's `path` production, which
+    # carries no `pct-encoded` alternative at all -- these are refused by the charset rather than
+    # by a decode step, and that is the point: see `test_the_path_charset_admits_no_percent`.
+    ("percent-encoded `..`, uppercase hex", f"did:webs:example.com:%2E%2E:{FULL_EXAMPLE_AID}"),
+    ("percent-encoded `..`, lowercase hex", f"did:webs:example.com:%2e%2e:{FULL_EXAMPLE_AID}"),
+    ("percent-encoded `/`", f"did:webs:example.com:a%2Fb:{FULL_EXAMPLE_AID}"),
+    # The separators a segment must never carry, whatever the charset happens to admit.
+    ("a literal `/` inside a segment", f"did:webs:example.com:a/b:{FULL_EXAMPLE_AID}"),
+    ("a backslash inside a segment", f"did:webs:example.com:a\\b:{FULL_EXAMPLE_AID}"),
+    ("a segment that is only a backslash", f"did:webs:example.com:\\:{FULL_EXAMPLE_AID}"),
+    ("U+0000 inside a segment", f"did:webs:example.com:a\x00b:{FULL_EXAMPLE_AID}"),
+    ("a segment that is only U+0000", f"did:webs:example.com:\x00:{FULL_EXAMPLE_AID}"),
+    # Leading/trailing whitespace: two segments that differ only by a space are two DIDs and one
+    # directory on any filesystem that trims, and a trailing space is invisible in a log line.
+    ("a leading space", f"did:webs:example.com: alice:{FULL_EXAMPLE_AID}"),
+    ("a trailing space", f"did:webs:example.com:alice :{FULL_EXAMPLE_AID}"),
+    ("a leading tab", f"did:webs:example.com:\talice:{FULL_EXAMPLE_AID}"),
+    ("a segment that is only whitespace", f"did:webs:example.com: :{FULL_EXAMPLE_AID}"),
+    # webvh-gate refuses a DID URL's delimiters across the whole identifier, before splitting.
+    ("a DID URL fragment", f"did:webs:example.com:alice:{FULL_EXAMPLE_AID}#keys-1"),
+    ("a DID URL query", f"did:webs:example.com:alice:{FULL_EXAMPLE_AID}?versionId=1"),
+    ("a DID URL path", f"did:webs:example.com:alice:{FULL_EXAMPLE_AID}/did.json"),
+]
+
+
+@pytest.mark.parametrize(
+    "label,raw", TRAVERSAL_DIDS, ids=[label for label, _ in TRAVERSAL_DIDS]
+)
+def test_a_segment_that_means_something_to_a_filesystem_is_refused(label, raw):
+    with pytest.raises(BakoboError) as exc_info:
+        parse(raw)
+    assert exc_info.value.code == "e.input.format.did.f"
+
+
+# Over-refusing is a regression too: `.` is in the spec's own `path` charset, and a real
+# deployment path uses it. Only the two *dot segments* are reserved, never the character.
+SAFE_DOTTED_SEGMENTS = ["v1.0", "...", ".well-known", "a..b", "..a", "a..", ".hidden", "alice."]
+
+
+@pytest.mark.parametrize("segment", SAFE_DOTTED_SEGMENTS)
+def test_a_segment_containing_a_literal_dot_still_parses(segment):
+    d = parse(f"did:webs:example.com:{segment}:{FULL_EXAMPLE_AID}")
+    assert d.path == (segment,)
+    assert d.compose() == f"did:webs:example.com:{segment}:{FULL_EXAMPLE_AID}"
+
+
+def test_the_path_charset_admits_no_percent():
+    """Why did:webs ports webvh-gate's refusals but not its percent-decode.
+
+    ``did:webvh``'s ``webvh-path-segment`` is DID Core's ``idchar``, which includes
+    ``pct-encoded`` -- so there a ``%2e%2e`` can only be refused *after* decoding exactly once,
+    and the decode is load-bearing. ``did:webs``'s ``path = 1*(ALPHA / DIGIT / "-" / "_" / "~" /
+    ".")`` has no such alternative, so an escape is not a spelling of a segment here; it is a
+    segment containing a ``%``, which the charset refuses outright. Adding a decode would be the
+    input-handling standard's "door that normalizes silently": it would start accepting DIDs the
+    spec does not define and would rewrite them on the way in.
+
+    This test is what makes that reasoning falsifiable. If the charset ever gains ``%`` -- which
+    would mean the spec gained ``pct-encoded`` -- this fails, and the decode-then-refuse step has
+    to be ported from the sibling at that moment rather than rediscovered from a traversal.
+    """
+    from didwebs.did import _PATH_SEGMENT_RE
+
+    assert not _PATH_SEGMENT_RE.match("%2e")
+    assert not _PATH_SEGMENT_RE.match("a%2Fb")
+
+
+# ---------------------------------------------------------------------------
 # Pure value type: frozen, hashable, no I/O
 # ---------------------------------------------------------------------------
 
@@ -387,8 +480,18 @@ def _random_aid(rng: random.Random) -> str:
 
 
 def _random_path_segment(rng: random.Random) -> str:
-    length = rng.randint(1, 8)
-    return "".join(rng.choice(_PATH_ALPHABET) for _ in range(length))
+    """One segment the parser accepts.
+
+    The alphabet includes ``.``, so the draw can land on ``.`` or ``..`` -- which constraint
+    ``a2sbz34i`` refuses. Redraw rather than widen the alphabet: the generator's job is to
+    produce *valid* DIDs for the round-trip property, and a generator that can emit a refused
+    one would turn a correct refusal into a failing property test.
+    """
+    while True:
+        length = rng.randint(1, 8)
+        segment = "".join(rng.choice(_PATH_ALPHABET) for _ in range(length))
+        if segment not in (".", ".."):
+            return segment
 
 
 def _random_valid_did(rng: random.Random) -> str:

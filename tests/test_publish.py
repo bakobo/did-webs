@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 import pytest
+from bakobo.errors import BakoboError
 
 from didwebs import did as did_module
 from didwebs import publish
@@ -188,3 +189,97 @@ def test_the_artifacts_are_flushed_to_disk_before_they_are_renamed(tmp_path, mon
     published(tmp_path)
 
     assert len(synced) == 2
+
+
+# --------------------------------------------------------------------------- containment
+#
+# Constraint ``a2sbz34i``. The parser refuses a `.` or `..` segment, which is the necessary
+# half; this is the sufficient half, at the join. `artifact_dir` takes `did` structurally --
+# anything carrying `.path` and `.aid` -- so nothing in its own signature says the value came
+# through `did.parse`. These tests hand it exactly what a parser regression, a future spec
+# widening, or a caller constructing a `WebsDid` directly would hand it.
+
+
+def _unparsed(path, aid=AID):
+    """A DID-shaped value that never went through ``did.parse``, which is the point."""
+    return did_module.WebsDid(raw="<hand-built>", host="labs.bakobo.com", port=None,
+                              path=tuple(path), aid=aid)
+
+
+@pytest.mark.parametrize(
+    "label,path,aid",
+    [
+        ("a parent-directory segment", ("..",), AID),
+        ("two of them", ("..", ".."), AID),
+        ("one between ordinary segments", ("a", "..", "..", ".."), AID),
+        ("an absolute segment", ("/etc",), AID),
+        ("a parent-directory aid", (), ".."),
+    ],
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_a_directory_outside_the_output_root_is_refused_at_the_join(label, path, aid, tmp_path):
+    served = tmp_path / "srv"
+    served.mkdir()
+
+    with pytest.raises(RuntimeError, match="outside"):
+        publish.artifact_dir(served, _unparsed(path, aid))
+
+
+def test_nothing_is_written_when_the_join_refuses(tmp_path):
+    """Fail closed *and* clean: the refusal fires before ``mkdir``, so a refused publication
+    leaves no directory behind for the next one to find."""
+    served = tmp_path / "srv"
+    served.mkdir()
+
+    with pytest.raises(RuntimeError, match="outside"):
+        publish.publish(served, _unparsed(("..",)), DOC, STREAM)
+
+    assert list(tmp_path.iterdir()) == [served]
+    assert list(served.iterdir()) == []
+
+
+def test_the_join_accepts_an_output_root_that_does_not_exist_yet(tmp_path):
+    """``publish`` creates the tree it writes into, so containment must be decidable for a root
+    with no inode. A check that needed the path to exist would refuse every first publication."""
+    directory = publish.artifact_dir(tmp_path / "not" / "yet", _unparsed(("user", "alice")))
+
+    assert directory == tmp_path / "not" / "yet" / "user" / "alice" / AID
+
+
+def test_the_join_accepts_a_relative_output_root(tmp_path, monkeypatch):
+    """``--out`` is whatever the operator typed, and a relative path is an ordinary thing to
+    type. Resolving both sides is what keeps that from reading as an escape."""
+    monkeypatch.chdir(tmp_path)
+
+    assert publish.artifact_dir("out", _unparsed(("user",))) == (tmp_path / "out/user" / AID)
+
+
+def test_the_join_accepts_a_symlinked_output_root(tmp_path):
+    """An operator may serve from a symlink. Resolving the root as well as the directory is what
+    stops the link itself from looking like an escape."""
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+
+    assert publish.artifact_dir(link, _unparsed(("user",))) == real / "user" / AID
+
+
+# --------------------------------------------------------------- two DIDs, one directory
+
+
+def test_two_dids_can_no_longer_name_one_artifact_directory(tmp_path):
+    """The second, quieter half of the same defect. A `.` segment collapses in the filesystem
+    but not in ``compose()``, so ``did:webs:...:a:<AID>`` and ``did:webs:...:a:.:<AID>`` were
+    two distinct, separately-authorized DIDs writing one ``did.json`` -- whichever published
+    second replaced the other's document with one naming a different identifier, silently.
+    """
+    plain = f"did:webs:labs.bakobo.com:a:{AID}"
+    dotted = f"did:webs:labs.bakobo.com:a:.:{AID}"
+
+    first = published(tmp_path, did=plain, doc={**DOC, "id": plain})
+
+    with pytest.raises(BakoboError) as exc_info:
+        published(tmp_path, did=dotted, doc={**DOC, "id": dotted})
+    assert exc_info.value.code == "e.input.format.did.f"
+    assert json.loads((first / "did.json").read_text(encoding="utf-8"))["id"] == plain
