@@ -273,12 +273,12 @@ def emit_stream(verified) -> bytes:
     # Hab: a delegate's events cannot be verified before its delegator's.
     for msg in db.cloneDelegation(kever=kever, gvrsn=V1):
         msgs.extend(msg)
-    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V1):
+    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V1):  # ~2irs
         msgs.extend(msg)
 
     for frame in verified.frames:
         if frame.ilk == REPLY:
-            msgs.extend(_reply_bytes(db, frame.said))
+            msgs.extend(_reply_bytes(db, frame.said))  # ~6g4x
 
     creders = [
         reger.creds.get(keys=(frame.said,))

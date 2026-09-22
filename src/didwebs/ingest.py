@@ -608,7 +608,7 @@ def duplicitous(scratch: Scratch, walked: Walk) -> set[str]:
     for frame in walked.frames:
         if not frame.is_kel:
             continue
-        winner = scratch.hby.db.kels.getLast(keys=frame.principal, on=frame.sn)
+        winner = scratch.hby.db.kels.getLast(keys=frame.principal, on=frame.sn)  # ~7g7t
         if winner is not None and str(winner) != frame.said:
             found.add(frame.said)
     return found
