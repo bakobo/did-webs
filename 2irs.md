@@ -2,3 +2,4 @@
 kind: todo
 created: 2026-09-21T22:23Z
 
+- 2026-09-22T00:09Z DECIDED 2026-09-22 (Daniel, this session): keep the first-seen replay and record why, naming GLEIF explicitly. this.i constraint vctci4we under decision vo6rnxve. Two reasons, and the second stands even if the ecosystem changes its mind: (1) gen_kel_cesr in the reference generator is a bare hab.replay, so this is the shape the deployed ecosystem receives and re-ingests, and gvimca says interop settles such a question; (2) a first-seen replay preserves the prefix relation the spec tests at :185-189, while trunk-only publication makes a cached pre-recovery copy neither prefix nor subset of what is published, which :190-192 says invalidates both DIDs permanently. Measured, not reasoned: the recovered_kel stream joined ORACLE_FIXTURES and the GLEIF resolver at 0d4f2fd ingests it cleanly and agrees on the documented intersection. emit_stream's docstring now cites the constraint.
