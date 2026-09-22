@@ -603,10 +603,21 @@ def duplicitous(scratch: Scratch, walked: Walk) -> set[str]:
     The accepted key event log is the one that actually fires at the estate pin, where
     ``escrowLDEvent`` raises ``AttributeError`` on a ``Baser.addLde`` that does not exist and the
     Parser swallows it — so a fork is dropped without a trace in ``ldes``.
+
+    **A first-seen frame is never a fork**, and that exemption is the whole of decision
+    ``vo6rnxve``. Two events at one sequence number are two different situations, and only the
+    validator's own rules tell them apart: keripy either refuses the second one — the losing
+    branch of a duplicitous submission, which never reaches the first-seen log — or accepts it
+    as *superseding* the first under KERI's recovery rules, which is what a controller rotating
+    to its unexposed pre-rotated keys after a live key exploit produces. Comparing every walked
+    frame's SAID against the winner at its ``sn`` cannot see the difference: the superseded
+    event is still an accepted, first-seen frame whose SAID is not the winner's, so a legitimate
+    recovery was refused as a fork. Reading ``fons`` first asks keripy the question it has
+    already answered, and leaves the conflict verdict to the frames it would not accept.
     """
     found = set(scratch.escrow_saids("ldes"))
     for frame in walked.frames:
-        if not frame.is_kel:
+        if not frame.is_kel or accepted(scratch, frame):
             continue
         winner = scratch.hby.db.kels.getLast(keys=frame.principal, on=frame.sn)
         if winner is not None and str(winner) != frame.said:

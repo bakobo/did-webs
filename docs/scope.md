@@ -111,6 +111,30 @@ language, and resolution-metadata contradictions.)
     the first clause. Our implementation fails closed on such key states
     (`e.feature.unsupported.threshold.f`); the representational gap belongs upstream.
 
+16. (Added from the 2026-09-21 red-team pass, findings A1/B2.) Resolution step 3 requires the
+    resolver to fail when "event-stream divergence or forking is detected" (`:344-346`), and no
+    reconciliation carve-out exists anywhere in `spec/`. KERI's superseding recovery is a fork
+    in KERI's own words (`spec-body.md:1788`, `:1799`) and is the designed answer to a live
+    exploit of the current signing keys — the answer `did:webs`'s own Security Considerations
+    recommend at `:2398-2401`. So a controller who recovers produces a stream a strictly
+    conforming resolver must refuse, and an attacker who merely *provokes* a recovery obtains
+    permanent denial of the DID. Neither specification says whether a published `keri.cesr`
+    carries superseded events, and the two readings engage different halves of the divergence
+    rule, so two honest implementations can disagree about whether one DID resolves. We
+    implemented the literal reading and it refused a valid recovery; we now reconcile instead
+    (`this.i` decision `vo6rnxve`), and the reference resolver accepts a recovered stream
+    because it does not implement the rule at all. The upstream asks are a reconciliation
+    carve-out and a normative statement of what `keri.cesr` must contain.
+
+17. (Same pass, finding A3.) The prefix/divergence rule at `:185-192` treats `keri.cesr` as
+    append-only and uses "prefix" in one clause and "subset" in the next. The stream also
+    carries BADA reply state (`:256-262`), where a newer record replaces an older one at the
+    same route, so an honest republication — a changed witness URL — can leave the previously
+    published stream neither a prefix nor a subset of the new one, and the literal rule then
+    declares both streams and both DIDs invalid. The ask is to scope the rule to the KEL and
+    TEL, define the relation once, and say what a resolver does with a reply record present in
+    one stream and absent from another. `this.i` tension `q5qmjv3t`.
+
 Upstream engagement note: trustoverip repos are in the no-AI-posting scope — issues get drafted
 as text for Daniel to post with his own hands.
 

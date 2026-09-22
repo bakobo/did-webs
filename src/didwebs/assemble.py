@@ -257,6 +257,11 @@ def emit_stream(verified) -> bytes:
     replayed first, then the accepted reply records, then for each accepted credential its
     registry's transaction log, its own, and the credential itself.
 
+    The key event log is replayed **first seen**, so a KEL that carries a superseding recovery
+    is hosted with the superseded event still in it — constraint ``vctci4we``, which is the
+    reference generator's shape (``gen_kel_cesr`` is a bare ``hab.replay``) and the one that
+    keeps a pre-recovery copy a prefix of what is published.
+
     Args:
         verified: the state an :func:`~didwebs.ingest.ingest` produced. Must still be open.
 
@@ -278,7 +283,7 @@ def emit_stream(verified) -> bytes:
 
     for frame in verified.frames:
         if frame.ilk == REPLY:
-            msgs.extend(_reply_bytes(db, frame.said))
+            msgs.extend(_reply_bytes(db, frame.said))  # ~6g4x
 
     creders = [
         reger.creds.get(keys=(frame.said,))

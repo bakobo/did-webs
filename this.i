@@ -279,6 +279,119 @@ Production did:webs implementation on KERI = goal:
             refused, so `v1.0`, `.well-known` and `...` all still parse. A regression test holds
             that line, because over-refusing here would be the quieter failure.
 
+        A fork keripy reconciled is not a fork we refuse = decision:
+          id: vo6rnxve
+          why: >
+            did:webs resolution step 3 says "If event-stream divergence or forking is detected
+            ... resolution MUST fail" (spec/body.md:344-346), and there is no reconciliation
+            clause anywhere in spec/. KERI's superseding recovery is a fork in KERI's own words
+            — "the KEL is forked at the sn of the superseding event" (spec-body.md:1799), "when
+            an event is superseded, a branch in the DAG is created" (:1788) — and it is the
+            designed response to a live exploit of the current signing keys, which is the very
+            thing did:webs's own Security Considerations recommend at :2398-2401. Read
+            literally, the two texts together make a controller who recovers unpublishable, and
+            hand an attacker who merely PROVOKES a recovery — one interaction event signed with
+            a stolen key, published once — permanent denial of the DID at no further cost.
+
+            This was not hypothetical here. An outside red-team pass (2026-09-21,
+            ../didwebvh-py/.ignored/redteam/reports/webs-findings.md, findings A1/B2) traced
+            this repo as the implementation that reads :344-346 at face value, and the
+            recovered_kel fixture then reproduced it at runtime: keripy accepts both the
+            superseded ixn and the superseding rot at sn 3, kels.getLast returns the rotation,
+            the interaction is still in the first-seen log, and duplicitous() flagged it — so
+            ingest refused a valid recovery with e.state.conflict.kel.f. The report reached the
+            same verdict about the reference resolver from the other side: it does not implement
+            the rule at all, which is more permissive than the spec requires. Two conforming
+            implementations disagreeing about whether the same DID resolves is the evidence that
+            the text needs fixing, and tick ~4gab carries that upstream.
+
+            So we take the reconciliation reading. A conflict keripy itself reconciled under
+            KERI's superseding acceptance rules is not a refusal; a conflict keripy would not
+            accept still is. The test is membership of the first-seen log, which is keripy's
+            record of the judgment it already made. Rejected implementing the superseding rules
+            ourselves — A0/A1/A2 and the prior-digest check are enforced in Kever.rotate before
+            anything reaches fons, and a second implementation of them in this repo would be a
+            second opinion that can only disagree with the first. Rejected keeping the literal
+            reading and asking the customer to republish a reconciled trunk instead: that makes
+            Bakobo the reason a compromise recovery cannot be published, and a controller in the
+            middle of a recovery is the party with the strongest claim on being served. Rejected
+            waiting for the spec item to land first: a refusal that only fires after a key
+            compromise is not a good thing to be holding.
+
+            Accepted tradeoff: we are deliberately more permissive than one reading of a MUST,
+            so a resolver that implements :344-346 literally may refuse a stream we publish.
+            Nothing is gained by an attacker from the permissiveness — a superseding rotation
+            has to satisfy the prior event's pre-rotation commitment, so only the controller's
+            unexposed next keys can produce one — and the property we give up is one no
+            implementation is known to enforce today.
+          children:
+
+            keri.cesr replays the key event log first seen, superseded events included = constraint:
+              id: vctci4we
+              why: >
+                Neither specification says what a published keri.cesr contains after a recovery.
+                KERI says both that superseded events "may be viewed or replayed in order of
+                their original acceptance" (spec-body.md:1799) and that recovery repairs the KEL
+                "so that future validators of the KEL will not see the compromised events"
+                (:1792); did:webs requires only "the KERI event stream for the AID"
+                (spec/body.md:118-125). The two readings publish different bytes and the
+                divergence rule reaches a different verdict for each.
+
+                We keep the first-seen replay emit_stream already does (db.clonePreIter), so the
+                hosted stream carries both branches at the fork point. We are copying the
+                reference generator: gen_kel_cesr in GLEIF's dws is `return hab.replay(pre=pre)`,
+                a first-seen replay over the same clonePreIter, so this is the shape the deployed
+                ecosystem receives and re-ingests, and decision gvimca says interop settles a
+                question of this kind. The second reason is independent of interop and survives
+                even if the ecosystem changes its mind: a first-seen replay PRESERVES the prefix
+                relation that the spec's own divergence rule tests at :185-189, because the
+                pre-recovery stream remains a prefix of the post-recovery one. Trunk-only
+                publication inverts that — a cached pre-recovery copy is then neither a prefix
+                nor a subset of what is published, and :190-192 says both the streams and the
+                DIDs are invalid, permanently, with no way back since first seen is never
+                unseen.
+
+                Rejected publishing the reconciled trunk only, for that reason. Rejected making
+                it a publication option: two shapes means two answers about whether one DID
+                resolves, which is the interoperability defect this constraint exists to avoid,
+                not a flexibility. Accepted tradeoff: the hosted stream carries an event the
+                controller repudiated, and a resolver reading :344-346 literally must refuse it.
+                That is vo6rnxve's conflict again, now on the wire rather than in our audit, and
+                it is why ~4gab asks the editors to say normatively what keri.cesr must contain.
+
+        Republication can break the spec's prefix rule for reply records = tension:
+          id: q5qmjv3t
+          why: >
+            The prefix/divergence rule at spec/body.md:185-192 treats keri.cesr as append-only,
+            and it is not. Per :256-262 the stream also carries KERI reply messages — Location
+            Scheme and Endpoint Role Authorization — and reply state is governed by BADA, where
+            a newer record REPLACES an older one at the same route rather than following it. The
+            spec's own informative note concedes the shape: "Superseded, cut, nullified,
+            escrowed, or otherwise unaccepted state is not projected" (:1725). emit_stream
+            replays the reply records the current submission carried, so a controller who changes
+            a witness URL and republishes produces a stream the previously published one is
+            neither a prefix nor a subset of — and the literal rule then says both streams and
+            both DIDs are invalid.
+
+            Recorded as a tension rather than closed, because the honest fix is not ours. Tick
+            ~4gab carries the upstream ask (red-team A3): scope the prefix/divergence rule to the
+            KEL and TEL, where the log really is append-only, define the relation once instead of
+            as "prefix" in one clause and "subset" in the next, and say what a resolver does with
+            a reply record present in one stream and absent from another. Rejected carrying
+            superseded reply records in the hosted stream so that every publication is a superset
+            of the last: we would have to keep publication history to do it, which constraint
+            embuup's per-submission scratch database deliberately does not, and the result would
+            republish endpoint advertisements the controller has withdrawn — a stale mailbox or
+            agent URL is exactly what BADA's replace semantics exist to retire. Rejected
+            detecting it at publish time: the publish side never sees the previously published
+            artifact, and a check that cannot see its own input is theatre.
+
+            Accepted tradeoff: until the spec settles, a controller who changes an endpoint and
+            republishes leaves any party holding the older stream able to reach the "both DIDs
+            invalid" verdict by the literal rule, and we can neither prevent it nor observe it
+            from here. The phase-2 resolver's half is smaller and is ours: scope its own
+            comparison to the KEL and TEL portions.
+
     Interop outranks estate keripy coherence = decision:
       id: gvimca
       why: >
