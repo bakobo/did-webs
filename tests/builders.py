@@ -454,9 +454,9 @@ def recovered_kel(tmp_path) -> Fixture:
     ``sn``). The result is a fork by construction — KERI says so in those words — but a
     *reconcilable* one, which keripy reconciles by its own acceptance rules.
 
-    The distinction from :func:`forked_kel` is what tick ``~7g7t`` is about, and it is visible in
-    the database rather than in the bytes: there keripy accepts only one of the two events and
-    the loser is never first seen, here it accepts both and the later one wins at that ``sn``.
+    The distinction from :func:`forked_kel` is decision ``vo6rnxve``, and it is visible in the
+    database rather than in the bytes: there keripy accepts only one of the two events and the
+    loser is never first seen, here it accepts both and the later one wins at that ``sn``.
     Neither event announces which case it is (KERI gives a recovery no distinguishing field and
     no new ilk), so only the validator's reconciliation rules tell them apart.
 
