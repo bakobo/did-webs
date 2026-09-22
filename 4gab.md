@@ -2,3 +2,4 @@
 kind: todo
 created: 2026-09-21T22:23Z
 
+- 2026-09-22T00:09Z DRAFTED 2026-09-22, NOT POSTED. Text at /tmp/didwebs-upstream-superseding-recovery.md, covering both A1 (reconciliation carve-out; say normatively what keri.cesr contains; separate the two rules at :185-192) and A3 (scope prefix/subset to KEL+TEL), with the implementation evidence: we refused a valid recovery under the literal reading, and the GLEIF resolver at 0d4f2fd ingests our post-recovery stream cleanly -- the experiment the red-team report named as its highest-value next step, now run. docs/scope.md carries them as soft spots 16 and 17. Stays open until Daniel posts it himself; trustoverip is in the no-AI-posting scope. The draft is in /tmp and will be reaped -- re-render from scope.md 16/17 plus this.i vo6rnxve/vctci4we/q5qmjv3t if it is gone.
