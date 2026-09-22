@@ -51,6 +51,14 @@ escrow audit therefore unions the `ldes` read — correct the moment keripy repa
 same-sequence-number conflict scan of the accepted KEL, which is what actually fires today.
 The fork oracle asserts the conflict is detected either way.
 
+That scan asks the first-seen log first (decision `vo6rnxve`). Two events at one sequence number
+are two situations, and only keripy's own acceptance rules tell them apart: the losing branch of
+a duplicitous submission never reaches `fons`, while a **superseding recovery** — a rotation to
+the unexposed pre-rotated keys, superseding the interaction event an exploited key signed — is
+accepted, so the superseded event is first seen and is not the winner at its `sn`. Comparing
+SAIDs against the winner alone cannot see the difference, and refused a valid recovery until
+2026-09-22. A frame keripy first-saw is therefore exempt from the conflict verdict.
+
 ## Modules
 
 - `didwebs/did.py` — the `WebsDid` value type. Parse/compose/validate per the spec's MSI
@@ -108,7 +116,9 @@ The fork oracle asserts the conflict is detected either way.
      originate from a submitted frame, so attribution-on-unaccounted and inspect-all are
      equivalent; the code implements the former): the likely-duplicitous escrow (`ldes`, or
      the same-sn conflict scan while `~3v45` stands) → `e.state.conflict.kel.f` (intra-stream
-     fork; first-seen-wins is *not* acceptance); the signature/seal/anchor escrows → the
+     fork; first-seen-wins is *not* acceptance — but a frame keripy *did* first-see is exempt,
+     because a superseding recovery is a reconciled fork, decision `vo6rnxve`); the
+     signature/seal/anchor escrows → the
      `e.proof.stream.*` leaf per kind; out-of-order and partially-witnessed residue falls to
      `e.proof.stream.frame.f` (the witnessed case is `~6ks5`). This audit — not parser
      exceptions — is what makes the error taxonomy's distinctions observable.
@@ -272,6 +282,9 @@ of new code. Oracles, strongest first:
    - truncated stream (KEL prefix only, no TEL) rejected
    - deactivated (rotated-to-null) AID **publishes successfully**, while a code-B AID is
      rejected at parse — one test asserting the two predicates are not conflated (KRT-F6)
+   - **superseding recovery** — an interaction event and the rotation that supersedes it at the
+     same `sn` — **publishes successfully**, paired with the forked-stream row above so the two
+     same-sn shapes are held apart by a test rather than by a docstring (decision `vo6rnxve`)
 6. **CLI smoke** (ledger #19): the installed `didwebs` entry point runs end-to-end in a temp
    dir — fixture keystore via `python -m didwebs.assemble`, publish, re-ingest what was
    published.

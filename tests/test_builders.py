@@ -168,6 +168,20 @@ def test_forked_kel_carries_two_distinct_events_at_the_same_sequence_number(tmp_
     assert at_sn[0]["p"] == at_sn[1]["p"]  # both branch from the same prior event
 
 
+def test_recovered_kel_carries_an_interaction_and_the_rotation_that_supersedes_it(tmp_path):
+    """The shape KERI calls a recovery: same sn, same prior event, and the second one is a
+    rotation — which is what rule A0 permits to supersede the first (``forked_kel`` is the same
+    picture with two interaction events, which nothing permits)."""
+    stream, facts = builders.recovered_kel(tmp_path)
+    events = kel_bodies(stream, facts["aid"])
+    at_sn = [event for event in events if event["s"] == facts["recovery_sn"]]
+
+    assert len(at_sn) == 2
+    assert [event["t"] for event in at_sn] == ["ixn", "rot"]  # the order the wire carries
+    assert at_sn[0]["p"] == at_sn[1]["p"]  # both branch from the same prior event
+    assert (at_sn[0]["d"], at_sn[1]["d"]) == (facts["superseded_said"], facts["superseding_said"])
+
+
 def test_dropped_frame_candidate_appends_a_well_formed_event_keripy_cannot_accept(tmp_path):
     """Correctly signed, same AID, but its prior event is not in the stream — escrowed forever."""
     stream, facts = builders.dropped_frame_candidate(tmp_path)
@@ -468,8 +482,10 @@ def test_endpoints_names_no_witness_because_none_can_be_built_in_process(tmp_pat
 
 
 def test_the_knob_registry_covers_every_name_the_brief_names():
-    """The brief's list, plus ``delegated:unanchored``, added later — the
-    one delegation shape that reaches the seal check instead of passing it or stopping short."""
+    """The brief's list, plus two added later: ``delegated:unanchored``, the one delegation
+    shape that reaches the seal check instead of passing it or stopping short, and
+    ``recovered_kel``, the valid fork the brief did not know was a shape (decision
+    ``vo6rnxve``)."""
     assert set(builders.KNOBS) == {
         "base",
         "two_registries",
@@ -480,6 +496,7 @@ def test_the_knob_registry_covers_every_name_the_brief_names():
         "spelling_variants",
         "tampered_sig",
         "forked_kel",
+        "recovered_kel",
         "dropped_frame_candidate",
         "dropped_rotation_candidate",
         "third_party",

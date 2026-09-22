@@ -790,6 +790,45 @@ def test_a_forked_submission_is_rejected_as_a_key_event_log_conflict(tmp_path):
     assert caught.value.code == "e.state.conflict.kel.f"
 
 
+def test_a_superseding_recovery_is_reconciled_rather_than_refused(tmp_path):
+    """Decision ``vo6rnxve``, and the defect that produced it (red-team A1/B2, 2026-09-21).
+
+    KERI's answer to a live exploit of the current signing keys is a rotation that supersedes
+    the attacker's interaction event at the same sequence number, and KERI calls the result a
+    fork. It is the mirror image of ``forked_kel`` in the database rather than in the bytes:
+    keripy accepts *both* events here, so the superseded one is a walked frame that is first
+    seen and is not the winner at its ``sn`` — which a SAID-versus-winner scan alone cannot tell
+    apart from the losing branch of a real conflict. Refusing it would mean a controller who
+    recovers from a key compromise can never publish again.
+    """
+    stream, facts = fixture("recovered_kel", tmp_path)
+    walked = ingest.walk(stream)
+    aid = facts["aid"]
+    sn = int(facts["recovery_sn"], 16)
+
+    with loaded(stream) as scratch:
+        superseded = scratch.hby.db.fons.get(keys=(aid, facts["superseded_said"]))
+        superseding = scratch.hby.db.fons.get(keys=(aid, facts["superseding_said"]))
+        assert superseded is not None and superseding is not None  # both first seen
+        assert str(scratch.hby.db.kels.getLast(keys=aid, on=sn)) == facts["superseding_said"]
+
+        assert ingest.duplicitous(scratch, walked) == set()
+        assert ingest.account_frames(scratch, walked) == ()
+        ingest.audit(scratch, claimed(facts), walked)  # the audit has nothing to say
+
+
+def test_a_recovered_stream_publishes_with_the_post_rotation_key_state(tmp_path):
+    """The other half of ``vo6rnxve``: the recovery is not merely tolerated, it is what the
+    publication rests on. The accepted head is the superseding rotation, so the document is
+    derived from the keys the controller recovered TO, never from the exploited ones."""
+    stream, facts = fixture("recovered_kel", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        kever = verified.hby.kevers[facts["aid"]]
+        assert kever.sner.num == facts["kel_sn"]
+        assert kever.serder.said == facts["superseding_said"]
+
+
 def test_the_likely_duplicitous_escrow_is_dead_on_this_keripy_line(tmp_path):
     """A defect record, not a preference. ``Kevery.escrowLDEvent`` calls ``self.db.addLde``, and
     ``Baser`` at the estate pin defines no such method: the ``AttributeError`` surfaces as
@@ -1261,7 +1300,9 @@ def test_the_negative_matrix_attributes_the_exact_code(knob, code, tmp_path):
     assert temp_stores() == before
 
 
-@pytest.mark.parametrize("knob", ["base", "spelling_variants", "delegated", "deactivated"])
+@pytest.mark.parametrize(
+    "knob", ["base", "spelling_variants", "delegated", "deactivated", "recovered_kel"]
+)
 def test_every_accepted_stream_has_every_frame_accounted(knob, tmp_path):
     """The other half of the same invariant: acceptance means *all* of it was accepted."""
     stream, facts = fixture(knob, tmp_path)

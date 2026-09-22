@@ -257,6 +257,11 @@ def emit_stream(verified) -> bytes:
     replayed first, then the accepted reply records, then for each accepted credential its
     registry's transaction log, its own, and the credential itself.
 
+    The key event log is replayed **first seen**, so a KEL that carries a superseding recovery
+    is hosted with the superseded event still in it — constraint ``vctci4we``, which is the
+    reference generator's shape (``gen_kel_cesr`` is a bare ``hab.replay``) and the one that
+    keeps a pre-recovery copy a prefix of what is published.
+
     Args:
         verified: the state an :func:`~didwebs.ingest.ingest` produced. Must still be open.
 
@@ -273,7 +278,7 @@ def emit_stream(verified) -> bytes:
     # Hab: a delegate's events cannot be verified before its delegator's.
     for msg in db.cloneDelegation(kever=kever, gvrsn=V1):
         msgs.extend(msg)
-    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V1):  # ~2irs
+    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V1):
         msgs.extend(msg)
 
     for frame in verified.frames:

@@ -427,6 +427,73 @@ def forked_kel(tmp_path) -> Fixture:
     )
 
 
+def _branch_head(tmp_path, name: str, extend) -> tuple[bytes, dict]:
+    """One extension of :func:`base`'s key event log, as ``(frame bytes, parsed body)``.
+
+    ``base`` closes its keystore before it returns, so a branch that must hang off the same trunk
+    rebuilds that trunk — same fixed salt, same pinned registry nonce, same fixed designation
+    date — and then adds its own event. That the two rebuilds agree is not taken on trust:
+    :func:`recovered_kel` asserts the branches name the same prior event.
+    """
+    with keri_api.scratch(name, tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        _issue(hab, regery, keri_api.designated_ids(hab.pre))
+        extend(hab)
+        frame = keri_api.frames(keri_api.kel_bytes(hab))[-1]
+        raw = frame.raw[frame.start : frame.end]
+    return raw, keri_api.bodies(raw)[0]
+
+
+def recovered_kel(tmp_path) -> Fixture:
+    """A superseding recovery: an interaction event, and the rotation that supersedes it.
+
+    **This is a VALID stream**, which is the whole point of the fixture. KERI's answer to a live
+    exploit of the current signing keys is to rotate to the unexposed pre-rotated keys at the
+    *same* sequence number as the event the attacker signed, superseding it (KERI
+    ``spec-body.md:1806``, rule A0: a rotation may supersede an interaction event at the same
+    ``sn``). The result is a fork by construction — KERI says so in those words — but a
+    *reconcilable* one, which keripy reconciles by its own acceptance rules.
+
+    The distinction from :func:`forked_kel` is what tick ``~7g7t`` is about, and it is visible in
+    the database rather than in the bytes: there keripy accepts only one of the two events and
+    the loser is never first seen, here it accepts both and the later one wins at that ``sn``.
+    Neither event announces which case it is (KERI gives a recovery no distinguishing field and
+    no new ilk), so only the validator's reconciliation rules tell them apart.
+
+    The recovery sits at the head of the KEL, after the credential's issuance anchor, so the
+    designation the document rests on is anchored before the fork point and the ACDC is
+    untouched. A recovery earlier than that would derange two things at once.
+    """
+    stream, facts = base(tmp_path / "trunk")
+    exploit, exploited = _branch_head(
+        tmp_path / "exploit",
+        "exploit",
+        lambda hab: hab.interact(
+            data=[{"d": "an interaction signed with the exposed keys"}], version=Vrsn_1_0
+        ),
+    )
+    recovery, recovered = _branch_head(
+        tmp_path / "recovery",
+        "recovery",
+        lambda hab: hab.rotate(version=Vrsn_1_0, gvrsn=Vrsn_1_0),
+    )
+    assert exploited["s"] == recovered["s"], "a recovery supersedes at the same sequence number"
+    assert exploited["p"] == recovered["p"], "both events must hang off the same trunk event"
+
+    return Fixture(
+        stream + exploit + recovery,
+        {
+            **facts,
+            "knob": "recovered_kel",
+            "kel_sn": int(recovered["s"], 16),
+            "recovery_sn": recovered["s"],
+            "superseded_said": exploited["d"],
+            "superseding_said": recovered["d"],
+            "parent_stream": stream,
+        },
+    )
+
+
 def dropped_frame_candidate(tmp_path, *, rotate: bool = False) -> Fixture:
     """A valid stream plus one well-formed event keripy will escrow forever and never accept.
 
@@ -768,6 +835,7 @@ KNOBS = {
     "spelling_variants": spelling_variants,
     "tampered_sig": tampered_sig,
     "forked_kel": forked_kel,
+    "recovered_kel": recovered_kel,
     "dropped_frame_candidate": dropped_frame_candidate,
     "dropped_rotation_candidate": functools.partial(dropped_frame_candidate, rotate=True),
     "third_party": third_party,

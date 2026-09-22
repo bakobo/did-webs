@@ -40,7 +40,12 @@ REQUIRED_VALUE = "required"
 #: the controller incepted and never issued from. That changes the bytes the ecosystem receives,
 #: and gvimca says interop is what decides such a change -- so the new shape is put in front of
 #: the reference resolver rather than reasoned about.
-ORACLE_FIXTURES = ("base", "endpoints", "deactivated", "two_registries")
+#:
+#: `recovered_kel` is here for the same reason and is the sharper case: decision `vo6rnxve`
+#: publishes a KEL that forks at the recovery point (constraint `vctci4we`), and whether the
+#: deployed ecosystem accepts such a stream is exactly the question the spec leaves open
+#: (tick `~4gab`). The report that prompted the decision could only trace it; this runs it.
+ORACLE_FIXTURES = ("base", "endpoints", "deactivated", "two_registries", "recovered_kel")
 
 
 def _venv_guard() -> None:
