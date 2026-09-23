@@ -254,15 +254,21 @@ def _witness_receipt_couples(serder, witnesses, wigers) -> bytes:
         counting.Counter(counting.Codens.NonTransReceiptCouples, count=len(wigers), version=V1).qb64b
     )
     for wiger in wigers:
-        if wiger.index < 0 or wiger.index >= len(witnesses):
-            raise errors.WITNESS_REPLAY_CORRUPT(frame=serder.said)
-        verfer = coring.Verfer(qb64=witnesses[wiger.index])
-        if not verfer.verify(wiger.raw, serder.raw):
-            raise errors.WITNESS_REPLAY_CORRUPT(frame=serder.said)
-        couples.extend(verfer.qb64b)
-        # Cigar's default code is the 32-byte Ed25519 public-key code; specify the 64-byte
-        # signature code, or Matter silently truncates the signature while serializing it.
-        couples.extend(coring.Cigar(raw=wiger.raw, code=coring.MtrDex.Ed25519_Sig).qb64b)
+        try:
+            index = wiger.index
+            if type(index) is not int or not 0 <= index < len(witnesses):
+                raise ValueError("The witness index is invalid.")
+            verfer = coring.Verfer(qb64=witnesses[index])
+            if not verfer.verify(wiger.raw, serder.raw):
+                raise ValueError("The witness signature does not verify.")
+            # Cigar's default code is the 32-byte Ed25519 public-key code; specify the 64-byte
+            # signature code, or Matter silently truncates the signature while serializing it.
+            receipt = verfer.qb64b + coring.Cigar(
+                raw=wiger.raw, code=coring.MtrDex.Ed25519_Sig
+            ).qb64b
+        except Exception as error:
+            raise errors.WITNESS_REPLAY_CORRUPT(frame=serder.said) from error
+        couples.extend(receipt)
     return bytes(couples)
 
 
@@ -296,17 +302,23 @@ def _with_witness_receipts(msg: bytes, receipts: bytes, said: str, body_size: in
     )
 
 
-def _kel_replay(db, pre: str):
-    """Replay one KEL with its verified witness signatures in both v1 receipt forms."""
-    witnesses = []
-    for msg in db.clonePreIter(pre=pre, fn=0, gvrsn=V1):
+def _kel_replay_messages(db, messages):
+    """Project verified receipt couples onto every KEL event in replay order."""
+    witnesses_by_pre = {}
+    for msg in messages:
         serder = serdering.SerderKERI(raw=msg)
+        pre = serder.pre
         keys = (pre, serder.said)
         if serder.estive:
-            witnesses = [wit.qb64 for wit in db.wits.get(keys=keys)]
+            witnesses_by_pre[pre] = [wit.qb64 for wit in db.wits.get(keys=keys)]
         wigers = db.wigs.get(keys=keys)
-        receipts = _witness_receipt_couples(serder, witnesses, wigers)
+        receipts = _witness_receipt_couples(serder, witnesses_by_pre.get(pre, []), wigers)
         yield _with_witness_receipts(msg, receipts, serder.said, serder.size)
+
+
+def _kel_replay(db, pre: str):
+    """Replay one KEL with its verified witness signatures in both v1 receipt forms."""
+    yield from _kel_replay_messages(db, db.clonePreIter(pre=pre, fn=0, gvrsn=V1))
 
 
 def emit_stream(verified) -> bytes:
@@ -343,7 +355,7 @@ def emit_stream(verified) -> bytes:
     msgs = bytearray()
     # `Hab.replay`'s recipe, driven on the database because a published AID is never a local
     # Hab: a delegate's events cannot be verified before its delegator's.
-    for msg in db.cloneDelegation(kever=kever, gvrsn=V1):
+    for msg in _kel_replay_messages(db, db.cloneDelegation(kever=kever, gvrsn=V1)):
         msgs.extend(msg)
     for msg in _kel_replay(db, verified.aid):
         msgs.extend(msg)

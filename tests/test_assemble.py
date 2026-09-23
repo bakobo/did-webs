@@ -266,7 +266,10 @@ def test_no_indexed_witness_signatures_adds_no_receipt_couples(keystore):
     assert assemble._witness_receipt_couples(keystore.hab.kever.serder, [], []) == b""
 
 
-@pytest.mark.parametrize("bad", ["negative index", "index", "signature"])
+@pytest.mark.parametrize("bad", [
+    "negative index", "index", "non-integer index", "boolean index",
+    "malformed witness prefix", "malformed signature", "signature",
+])
 def test_witness_receipt_replay_refuses_unverifiable_database_state(keystore, bad):
     serder = keystore.hab.kever.serder
     witness = signing.Signer(raw=b"0123456789abcdef0123456789abcdef", transferable=False)
@@ -275,9 +278,16 @@ def test_witness_receipt_replay_refuses_unverifiable_database_state(keystore, ba
     if bad == "negative index":
         # A corrupt database index must not select the last witness via Python indexing.
         wiger = SimpleNamespace(index=-1, raw=wiger.raw)
+    elif bad == "non-integer index":
+        wiger = SimpleNamespace(index="0", raw=wiger.raw)
+    elif bad == "boolean index":
+        wiger = SimpleNamespace(index=False, raw=wiger.raw)
+    elif bad == "malformed signature":
+        wiger = SimpleNamespace(index=0, raw=object())
+    witnesses = ["not a verifier prefix"] if bad == "malformed witness prefix" else [witness.verfer.qb64]
 
     with pytest.raises(BakoboError) as caught:
-        assemble._witness_receipt_couples(serder, [witness.verfer.qb64], [wiger])
+        assemble._witness_receipt_couples(serder, witnesses, [wiger])
     assert caught.value.code == "e.self.corrupt.witness-replay.f"
 
 
@@ -334,6 +344,25 @@ def test_a_delegated_publication_replays_its_delegators_kel_first(tmp_path):
     assert principals[0] == facts["delegator_aid"]
     assert facts["aid"] in principals
     assert principals.index(facts["delegator_aid"]) < principals.index(facts["aid"])
+
+
+def test_delegator_kel_passes_through_receipt_projection_before_the_delegate(tmp_path, monkeypatch):
+    stream, facts = builders.KNOBS["delegated"](tmp_path)
+    did = did_module.parse(facts["did_webs"])
+    with ingest.ingest(stream, did) as verified:
+        projected = []
+        original = assemble._witness_receipt_couples
+
+        def record_projection(serder, witnesses, wigers):
+            projected.append(serder.pre)
+            return original(serder, witnesses, wigers)
+
+        monkeypatch.setattr(assemble, "_witness_receipt_couples", record_projection)
+        assemble.emit_stream(verified)
+
+    assert projected[0] == facts["delegator_aid"]
+    assert facts["aid"] in projected
+    assert projected.index(facts["delegator_aid"]) < projected.index(facts["aid"])
 
 
 def test_the_emitted_reply_records_are_the_ones_the_audit_accepted(tmp_path):

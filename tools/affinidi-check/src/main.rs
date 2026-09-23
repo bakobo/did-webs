@@ -25,9 +25,12 @@ fn read_artifact(path: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn resolve_artifacts(did: &str, stream: &[u8], document: &[u8]) -> Result<String, String> {
-    let did = DidWebs::parse(did).map_err(|error| format!("{INVOCATION_ERROR}: {error}"))?;
-    let resolved = resolve_from_artifacts(&did, stream, Some(document))
+fn parse_did(did: &str) -> Result<DidWebs, String> {
+    DidWebs::parse(did).map_err(|error| format!("{INVOCATION_ERROR}: {error}"))
+}
+
+fn resolve_artifacts(did: &DidWebs, stream: &[u8], document: &[u8]) -> Result<String, String> {
+    let resolved = resolve_from_artifacts(did, stream, Some(document))
         .map_err(|error| format!("{RESOLUTION_ERROR}: {error}"))?;
     serde_json::to_string_pretty(&resolved).map_err(|error| format!("{RESOLUTION_ERROR}: {error}"))
 }
@@ -39,9 +42,10 @@ fn run() -> Result<String, String> {
             "{INVOCATION_ERROR}: Supply DID, keri.cesr path, and did.json path."
         ));
     };
+    let did = parse_did(did)?;
     let stream = read_artifact(stream_path)?;
     let document = read_artifact(document_path)?;
-    resolve_artifacts(did, &stream, &document)
+    resolve_artifacts(&did, &stream, &document)
 }
 
 fn main() -> ExitCode {
@@ -59,17 +63,17 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_artifacts;
+    use super::{parse_did, resolve_artifacts};
 
     const DID: &str = "did:webs:example.com:ENro7uf0ePmiK3jdTo2YCdXLqW7z7xoP6qhhBou6gBLe";
 
     #[test]
     fn malformed_did_is_rejected_before_the_stream() {
-        assert!(resolve_artifacts("did:web:example.com:Eabc", b"", b"{}").is_err());
+        assert!(parse_did("did:web:example.com:Eabc").is_err());
     }
 
     #[test]
     fn empty_stream_is_rejected() {
-        assert!(resolve_artifacts(DID, b"", b"{}").is_err());
+        assert!(resolve_artifacts(&parse_did(DID).unwrap(), b"", b"{}").is_err());
     }
 }

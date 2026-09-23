@@ -96,3 +96,22 @@ fn cli_reports_open_and_read_failures_with_the_artifact_error() {
         );
     }
 }
+
+#[test]
+fn cli_rejects_an_invalid_did_before_opening_artifacts() {
+    let output = Command::new(CLI)
+        .args([
+            "did:web:example.com:Eabc",
+            "/this/didwebs/artifact/does/not/exist",
+            "/this/didwebs/document/does/not/exist",
+        ])
+        .output()
+        .expect("checker starts");
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("e.input.format.interop-check.f"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
