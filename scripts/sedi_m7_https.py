@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Serve M7 artifacts on localhost HTTPS through a local CONNECT proxy.
 
 The proxy keeps the DID host and implicit port 443 intact for the third-party
@@ -16,6 +17,15 @@ import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
+
+
+class ArtifactHandler(SimpleHTTPRequestHandler):
+    extensions_map: ClassVar[dict[str, str]] = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        ".cesr": "application/cesr",
+    }
+
 
 PROXY_TARGET_INVALID = b"e.input.format.proxy-target.f: The proxy accepts CONNECT only for the configured DID host on port 443.\n"
 PROXY_HEADERS_TOO_LARGE = (
@@ -89,7 +99,7 @@ def main() -> None:
     parser.add_argument("--proxy-port", type=int, default=8444)
     args = parser.parse_args()
 
-    handler = partial(SimpleHTTPRequestHandler, directory=str(args.root.resolve()))
+    handler = partial(ArtifactHandler, directory=str(args.root.resolve()))
     https = ThreadingHTTPServer(("127.0.0.1", args.https_port), handler)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.load_cert_chain(args.cert, args.key)

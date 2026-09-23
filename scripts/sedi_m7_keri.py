@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """KLI keystore adapter for the SEDI M7 localhost rehearsal.
 
 KLI incepts and rotates the witnessed AIDs. Its VC commands currently omit the

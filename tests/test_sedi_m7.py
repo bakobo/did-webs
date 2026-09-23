@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import contextlib
+import http.client
 import runpy
 import socket
 import socketserver
 import sys
 import threading
+from functools import partial
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -172,6 +175,25 @@ def test_https_tunnel_forwards_only_the_configured_host():
                     * 300
                 )
                 assert b"e.input.range.proxy-headers.f" in client.recv(1024)
+
+
+def test_https_serves_the_cesr_media_type(tmp_path):
+    (tmp_path / "keri.cesr").write_bytes(b"example")
+    handler = partial(sedi_m7_https.ArtifactHandler, directory=str(tmp_path))
+    with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = http.client.HTTPConnection("127.0.0.1", server.server_port)
+            client.request("GET", "/keri.cesr")
+            response = client.getresponse()
+            assert response.status == 200
+            assert response.getheader("Content-Type") == "application/cesr"
+            assert response.read() == b"example"
+            client.close()
+        finally:
+            server.shutdown()
+            thread.join()
 
 
 def test_https_main_binds_loopback_and_closes_servers(monkeypatch, tmp_path):
