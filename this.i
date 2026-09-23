@@ -531,6 +531,21 @@ Production did:webs implementation on KERI = goal:
         keripy's ACDC verifier requires -I. The cold-start interop harness preserves this
         boundary as a reproducible failure until the parsers converge.
 
+    The cold-start interoperability checker bounds both artifact reads = decision:
+      id: 66uaey3q
+      why: >
+        The Affinidi checker is a separate Rust process, so the Python publication stream door
+        cannot bound what it reads. Both the CESR stream and the companion did.json are local
+        inputs to that checker, and reading either to EOF before measuring it would leave a
+        memory-exhaustion path in the diagnostic harness. Read at most 8 MiB plus one byte from
+        each artifact and refuse the overage before parsing or resolving. The stream uses the
+        publication door's 8 MiB flood guard; the companion document gets the same generous
+        ceiling rather than an independently tuned limit. This is a diagnostic input contract,
+        not a claim that a published document should normally be that large. A permanent,
+        named range error makes the refusal distinguishable from a missing file or a resolver
+        failure. The fixed bound also keeps the checker useful on adversarial artifacts without
+        making its result depend on a file size supplied by the artifact producer.
+
     The demo replay accepts one verified designation per AID = constraint:
       id: 52vtfve2
       why: >
