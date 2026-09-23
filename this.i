@@ -546,6 +546,22 @@ Production did:webs implementation on KERI = goal:
         failure. The fixed bound also keeps the checker useful on adversarial artifacts without
         making its result depend on a file size supplied by the artifact producer.
 
+    The M7 Affinidi fallback is pinned and shown beside upstream = decision:
+      id: dajed5sv
+      why: >
+        The published Affinidi 0.7.0 resolver refuses our witnessed KERI v1 artifacts at the
+        designated-aliases ACDC's -I source seal and Guy's normal rotation without a c field.
+        Daniel chose a stage fallback that patches those two interpretation gaps in private
+        Bakobo copies of Affinidi's KERI and did:webs repositories. The stage check pins exact
+        Git revisions, discloses each patch, and keeps a separate check against the published
+        0.7.0 crate so the intervention remains visible rather than being mistaken for an
+        upstream interoperability pass. The private copies are independent repositories with
+        upstream remotes because GitHub cannot make a private fork of a public repository.
+        Accepted tradeoff: a private Git dependency needs Bakobo credentials on a cold start,
+        and the patched check demonstrates only the behaviors its falsifiers exercise. It does
+        not close the upstream parser issue or establish that every part of the did:webs method
+        is enforced by an unmodified independent resolver.
+
     The demo replay accepts one verified designation per AID = constraint:
       id: 52vtfve2
       why: >
