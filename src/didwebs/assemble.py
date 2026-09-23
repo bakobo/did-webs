@@ -254,7 +254,7 @@ def _witness_receipt_couples(serder, witnesses, wigers) -> bytes:
         counting.Counter(counting.Codens.NonTransReceiptCouples, count=len(wigers), version=V1).qb64b
     )
     for wiger in wigers:
-        if wiger.index >= len(witnesses):
+        if wiger.index < 0 or wiger.index >= len(witnesses):
             raise errors.WITNESS_REPLAY_CORRUPT(frame=serder.said)
         verfer = coring.Verfer(qb64=witnesses[wiger.index])
         if not verfer.verify(wiger.raw, serder.raw):

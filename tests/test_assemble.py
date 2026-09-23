@@ -10,6 +10,7 @@ dropped by every deployed 1.2.x parser.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import builders
 import keri_api
@@ -265,12 +266,15 @@ def test_no_indexed_witness_signatures_adds_no_receipt_couples(keystore):
     assert assemble._witness_receipt_couples(keystore.hab.kever.serder, [], []) == b""
 
 
-@pytest.mark.parametrize("bad", ["index", "signature"])
+@pytest.mark.parametrize("bad", ["negative index", "index", "signature"])
 def test_witness_receipt_replay_refuses_unverifiable_database_state(keystore, bad):
     serder = keystore.hab.kever.serder
     witness = signing.Signer(raw=b"0123456789abcdef0123456789abcdef", transferable=False)
     wiger = witness.sign(ser=b"another event" if bad == "signature" else serder.raw,
                          index=1 if bad == "index" else 0)
+    if bad == "negative index":
+        # A corrupt database index must not select the last witness via Python indexing.
+        wiger = SimpleNamespace(index=-1, raw=wiger.raw)
 
     with pytest.raises(BakoboError) as caught:
         assemble._witness_receipt_couples(serder, [witness.verfer.qb64], [wiger])

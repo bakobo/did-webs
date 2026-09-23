@@ -16,9 +16,12 @@ nice -n 19 ionice -c 3 cargo run --locked --manifest-path tools/affinidi-check/C
 
 Exit code 0 means Affinidi accepted both artifacts. Exit code 1 means an invocation,
 file-read, or resolver failure; stderr includes a symbolic code and Affinidi's reason.
+Each artifact read is capped at 8 MiB; a larger stream or document fails with
+`e.input.range.interop-artifact.f` before Affinidi parses it.
 Use a copy of each artifact to test tampering, then compare with the untampered run.
 The harness does not silently omit `did.json`: Affinidi's API makes that argument
 optional, but doing so would skip even its partial document check.
 
 Run its own tests with `nice -n 19 ionice -c 3 cargo test --locked --manifest-path
-tools/affinidi-check/Cargo.toml`.
+tools/affinidi-check/Cargo.toml`. The CLI success test uses the independent
+reference artifacts in `tests/fixtures/`, attributed there.
