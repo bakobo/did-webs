@@ -498,3 +498,15 @@ Production did:webs implementation on KERI = goal:
         accountable, while warn-only below TOAD would fail open (org principle 8). Accepted
         tradeoff: a resolver cannot distinguish "witness slow to receipt" from "receipt
         withheld"; below TOAD we refuse rather than guess.
+
+    Demo DIDs use a provisional, configurable host = decision:
+      id: n4fsn4v2
+      why: >
+        The SEDI Summit rehearsal publishes the reissuer's and Guy's AIDs at dids.bakobo.com,
+        with each AID in its own path, so an independent resolver can exercise the same URL
+        shape intended for hosting. The trust-anchor hostname decision remains open in the
+        interop ledger (2u2s), so the demo recipe takes the host as an input instead of
+        embedding it in an AID or a fixed artifact path. If that decision chooses another
+        host, both designated-aliases ACDCs and their did:webs DIDs must be re-minted; changing
+        DNS or copying files cannot change a signed alias. Accepted tradeoff: the rehearsal
+        proves interoperability for a provisional name, not authority for the final host.
