@@ -1,4 +1,4 @@
-//! Cold-start artifact check against the published affinidi-did-webs 0.7.0 crate.
+//! Cold-start artifact check against the selected affinidi-did-webs crate.
 
 use std::{env, fs::File, io::Read, process::ExitCode};
 
@@ -48,7 +48,7 @@ fn run() -> Result<String, String> {
     resolve_artifacts(&did, &stream, &document)
 }
 
-fn main() -> ExitCode {
+pub(crate) fn main() -> ExitCode {
     match run() {
         Ok(document) => {
             println!("{document}");
