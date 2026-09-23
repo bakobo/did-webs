@@ -7,10 +7,11 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 21 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
+The 22 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
 from that table's rev 2 (2026-08-14); `e.input.range.stream.f` was added with the stream door
 (constraint `adyiw2mm`), and `e.self.corrupt.did.f` with the artifact-join containment check
-(constraint `a2sbz34i`). The table carries fewer rows than codes, because
+(constraint `a2sbz34i`), and `e.self.corrupt.witness-replay.f` with the interop replay
+(decision `t3q6azxm`). The table carries fewer rows than codes, because
 `e.proof.stream.*.f` is written once and names its four leaves — `sig`, `seal`, `anchor`,
 `frame` — in the same cell, the audit picking between them by which escrow held the frame.
 
@@ -256,6 +257,16 @@ SCHEMA_CORRUPT = ErrorCode(
     args=("computed", "pinned"),
     hint="Reinstall didwebs from a trusted distribution; this failure is in the package, not "
     "in your submission.",
+)
+
+WITNESS_REPLAY_CORRUPT = ErrorCode(
+    "e.self.corrupt.witness-replay.f",
+    "A verified witness signature cannot be replayed as a receipt.",
+    detail="The stored witness signature for event {frame} has an invalid witness index, does "
+    "not verify against the event body, or cannot be placed in its v1 replay frame.",
+    args=("frame",),
+    hint="Report the publication stream and this didwebs version; the accepted state could not "
+    "be replayed faithfully.",
 )
 
 UNKNOWN_FAILURE = ErrorCode(

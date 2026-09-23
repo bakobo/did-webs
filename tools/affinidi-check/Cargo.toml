@@ -1,0 +1,11 @@
+[package]
+name = "didwebs-affinidi-check"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+affinidi-did-webs = "=0.7.0"
+serde_json = "1"
+
+[profile.dev]
+debug = 0

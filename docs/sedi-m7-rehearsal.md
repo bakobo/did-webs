@@ -31,6 +31,15 @@ The proxy binds `127.0.0.1:8444` and tunnels only `dids.bakobo.com:443` to the T
 
 GLEIF `dws` 0.3.7 and Affinidi `affinidi-did-webs` 0.7.0 both refuse the published artifacts in the 2026-09-23 rehearsal. GLEIF parses the stream and derives the correct current key, but its DID document comparison rejects spec-required `controller`, `authentication`, and `assertionMethod` fields, the optional `@context`, and the different `alsoKnownAs` value. Affinidi rejects the v1 ACDC `-I` source seal triple attachment; when the ACDC is removed for diagnosis, it does not count the stream's indexed witness signatures as receipts. See `docs/scope.md` and `.ignored/m7-report.md` in the rehearsal worktree for the commands and evidence. These are open interop issues; the independent-resolver acceptance criterion has not been met.
 
+The follow-up replay now emits verified non-transferable receipt couples alongside
+indexed witness signatures. Affinidi resolves both witnessed KELs when their ACDC
+frame is removed **for diagnosis**, but the complete spec-required publication still
+fails on `-I`. It also rejects Guy's normal v1 rotation because it requires a `c`
+field on `rot`. The committed [Affinidi checker](../tools/affinidi-check/README.md)
+and [interop findings](affinidi-interop.md) make these results repeatable. A stream
+without its designated-aliases ACDC is not a valid did:webs publication, so this
+diagnostic success does not satisfy the independent-resolver acceptance criterion.
+
 ## Static hosting contract for `dids.bakobo.com`
 
 An OpenTofu-managed server or static object store needs a public DNS record for `dids.bakobo.com`, a publicly trusted TLS certificate, and HTTPS on port 443. It must serve `GET /demo/<AID>/did.json` as JSON and `GET /demo/<AID>/keri.cesr` as `application/cesr`, without authentication or an HTTP downgrade. Those are the paths encoded by `did:webs:dids.bakobo.com:demo:<AID>`. The host stores only the published artifacts; the controllers' signing keys and keystores stay with the controllers.

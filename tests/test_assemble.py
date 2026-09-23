@@ -14,8 +14,9 @@ import json
 import builders
 import keri_api
 import pytest
+from bakobo.errors import BakoboError
 from conftest import CONTROLLER_SALT, designated_ids
-from keri.core import coring, counting
+from keri.core import coring, counting, signing
 from keri.kering import Vrsn_1_0, Vrsn_2_0
 
 from didwebs import assemble, document, ingest, schemaing
@@ -246,6 +247,57 @@ def test_the_emitted_stream_is_not_the_submitted_bytes(tmp_path):
     emitted_stream, submitted, _ = emitted("base", tmp_path)
 
     assert emitted_stream != submitted
+
+
+def test_verified_indexed_witness_signature_can_be_emitted_as_a_receipt_couple(keystore):
+    serder = keystore.hab.kever.serder
+    witness = signing.Signer(raw=b"0123456789abcdef0123456789abcdef", transferable=False)
+    wiger = witness.sign(ser=serder.raw, index=0)
+
+    receipts = assemble._witness_receipt_couples(serder, [witness.verfer.qb64], [wiger])
+
+    assert receipts.startswith(b"-CAB" + witness.verfer.qb64b)
+    assert receipts.endswith(coring.Cigar(raw=wiger.raw, code=coring.MtrDex.Ed25519_Sig).qb64b)
+    assert witness.verfer.verify(wiger.raw, serder.raw)
+
+
+def test_no_indexed_witness_signatures_adds_no_receipt_couples(keystore):
+    assert assemble._witness_receipt_couples(keystore.hab.kever.serder, [], []) == b""
+
+
+@pytest.mark.parametrize("bad", ["index", "signature"])
+def test_witness_receipt_replay_refuses_unverifiable_database_state(keystore, bad):
+    serder = keystore.hab.kever.serder
+    witness = signing.Signer(raw=b"0123456789abcdef0123456789abcdef", transferable=False)
+    wiger = witness.sign(ser=b"another event" if bad == "signature" else serder.raw,
+                         index=1 if bad == "index" else 0)
+
+    with pytest.raises(BakoboError) as caught:
+        assemble._witness_receipt_couples(serder, [witness.verfer.qb64], [wiger])
+    assert caught.value.code == "e.self.corrupt.witness-replay.f"
+
+
+def test_receipts_are_placed_before_the_first_seen_replay_couple():
+    wrapper = counting.Counter(counting.Codens.AttachmentGroup, count=16, version=Vrsn_1_0)
+    enlarged = counting.Counter(counting.Codens.AttachmentGroup, count=18, version=Vrsn_1_0)
+    replay = b"event" + wrapper.qb64b + b"-EAB" + b"x" * 60
+    assert assemble._with_witness_receipts(replay, b"-CABxxxx", "event-said", 5) == (
+        b"event" + enlarged.qb64b + b"-CABxxxx-EAB" + b"x" * 60
+    )
+    assert assemble._with_witness_receipts(replay, b"", "event-said", 5) == replay
+
+
+def test_receipts_are_refused_if_the_replay_trailer_is_not_where_expected():
+    with pytest.raises(BakoboError) as caught:
+        assemble._with_witness_receipts(b"event without a replay trailer", b"-CABxxxx", "said", 5)
+    assert caught.value.code == "e.self.corrupt.witness-replay.f"
+
+
+def test_receipts_are_refused_if_the_attachment_wrapper_is_not_valid():
+    wrong_wrapper = b"event-AAB" + b"-EAB" + b"x" * 60
+    with pytest.raises(BakoboError) as caught:
+        assemble._with_witness_receipts(wrong_wrapper, b"-CABxxxx", "said", 5)
+    assert caught.value.code == "e.self.corrupt.witness-replay.f"
 
 
 def test_the_emitted_stream_orders_frames_the_way_the_reference_emits_them(tmp_path):

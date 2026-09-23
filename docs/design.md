@@ -223,6 +223,7 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 | `e.feature.unsupported.threshold.f` | multi-clause (conjunctive) `kt` — unrepresentable in `ConditionalProof2022` |
 | `e.self.corrupt.did.f` | a DID reached `publish.artifact_dir` with a component that is not one directory name — `did.parse` refuses these, so reaching the join means our own contract broke, never the submitter's (constraint `a2sbz34i`) |
 | `e.self.corrupt.schema.f` | the bundled designated-aliases schema fails SAID recomputation at load — our packaging fault, never the submitter's |
+| `e.self.corrupt.witness-replay.f` | a stored indexed witness signature cannot be mapped to a named witness and verified during hosted replay |
 | `e.self.unknown.f` | unattributable internal failure |
 
 Boundary reasoning follows the standard: what is decidable from the submission alone is
