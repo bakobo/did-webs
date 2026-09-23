@@ -10,12 +10,14 @@ dropped by every deployed 1.2.x parser.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import builders
 import keri_api
 import pytest
+from bakobo.errors import BakoboError
 from conftest import CONTROLLER_SALT, designated_ids
-from keri.core import coring, counting
+from keri.core import coring, counting, signing
 from keri.kering import Vrsn_1_0, Vrsn_2_0
 
 from didwebs import assemble, document, ingest, schemaing
@@ -248,6 +250,70 @@ def test_the_emitted_stream_is_not_the_submitted_bytes(tmp_path):
     assert emitted_stream != submitted
 
 
+def test_verified_indexed_witness_signature_can_be_emitted_as_a_receipt_couple(keystore):
+    serder = keystore.hab.kever.serder
+    witness = signing.Signer(raw=b"0123456789abcdef0123456789abcdef", transferable=False)
+    wiger = witness.sign(ser=serder.raw, index=0)
+
+    receipts = assemble._witness_receipt_couples(serder, [witness.verfer.qb64], [wiger])
+
+    assert receipts.startswith(b"-CAB" + witness.verfer.qb64b)
+    assert receipts.endswith(coring.Cigar(raw=wiger.raw, code=coring.MtrDex.Ed25519_Sig).qb64b)
+    assert witness.verfer.verify(wiger.raw, serder.raw)
+
+
+def test_no_indexed_witness_signatures_adds_no_receipt_couples(keystore):
+    assert assemble._witness_receipt_couples(keystore.hab.kever.serder, [], []) == b""
+
+
+@pytest.mark.parametrize("bad", [
+    "negative index", "index", "non-integer index", "boolean index",
+    "malformed witness prefix", "malformed signature", "signature",
+])
+def test_witness_receipt_replay_refuses_unverifiable_database_state(keystore, bad):
+    serder = keystore.hab.kever.serder
+    witness = signing.Signer(raw=b"0123456789abcdef0123456789abcdef", transferable=False)
+    wiger = witness.sign(ser=b"another event" if bad == "signature" else serder.raw,
+                         index=1 if bad == "index" else 0)
+    if bad == "negative index":
+        # A corrupt database index must not select the last witness via Python indexing.
+        wiger = SimpleNamespace(index=-1, raw=wiger.raw)
+    elif bad == "non-integer index":
+        wiger = SimpleNamespace(index="0", raw=wiger.raw)
+    elif bad == "boolean index":
+        wiger = SimpleNamespace(index=False, raw=wiger.raw)
+    elif bad == "malformed signature":
+        wiger = SimpleNamespace(index=0, raw=object())
+    witnesses = ["not a verifier prefix"] if bad == "malformed witness prefix" else [witness.verfer.qb64]
+
+    with pytest.raises(BakoboError) as caught:
+        assemble._witness_receipt_couples(serder, witnesses, [wiger])
+    assert caught.value.code == "e.self.corrupt.witness-replay.f"
+
+
+def test_receipts_are_placed_before_the_first_seen_replay_couple():
+    wrapper = counting.Counter(counting.Codens.AttachmentGroup, count=16, version=Vrsn_1_0)
+    enlarged = counting.Counter(counting.Codens.AttachmentGroup, count=18, version=Vrsn_1_0)
+    replay = b"event" + wrapper.qb64b + b"-EAB" + b"x" * 60
+    assert assemble._with_witness_receipts(replay, b"-CABxxxx", "event-said", 5) == (
+        b"event" + enlarged.qb64b + b"-CABxxxx-EAB" + b"x" * 60
+    )
+    assert assemble._with_witness_receipts(replay, b"", "event-said", 5) == replay
+
+
+def test_receipts_are_refused_if_the_replay_trailer_is_not_where_expected():
+    with pytest.raises(BakoboError) as caught:
+        assemble._with_witness_receipts(b"event without a replay trailer", b"-CABxxxx", "said", 5)
+    assert caught.value.code == "e.self.corrupt.witness-replay.f"
+
+
+def test_receipts_are_refused_if_the_attachment_wrapper_is_not_valid():
+    wrong_wrapper = b"event-AAB" + b"-EAB" + b"x" * 60
+    with pytest.raises(BakoboError) as caught:
+        assemble._with_witness_receipts(wrong_wrapper, b"-CABxxxx", "said", 5)
+    assert caught.value.code == "e.self.corrupt.witness-replay.f"
+
+
 def test_the_emitted_stream_orders_frames_the_way_the_reference_emits_them(tmp_path):
     """KEL first, then the reply records, then per credential its registry TEL, its own TEL and
     the ACDC — `dws/core/artifacting.py`'s `generate_artifacts` order, which is what the GLEIF
@@ -278,6 +344,25 @@ def test_a_delegated_publication_replays_its_delegators_kel_first(tmp_path):
     assert principals[0] == facts["delegator_aid"]
     assert facts["aid"] in principals
     assert principals.index(facts["delegator_aid"]) < principals.index(facts["aid"])
+
+
+def test_delegator_kel_passes_through_receipt_projection_before_the_delegate(tmp_path, monkeypatch):
+    stream, facts = builders.KNOBS["delegated"](tmp_path)
+    did = did_module.parse(facts["did_webs"])
+    with ingest.ingest(stream, did) as verified:
+        projected = []
+        original = assemble._witness_receipt_couples
+
+        def record_projection(serder, witnesses, wigers):
+            projected.append(serder.pre)
+            return original(serder, witnesses, wigers)
+
+        monkeypatch.setattr(assemble, "_witness_receipt_couples", record_projection)
+        assemble.emit_stream(verified)
+
+    assert projected[0] == facts["delegator_aid"]
+    assert facts["aid"] in projected
+    assert projected.index(facts["delegator_aid"]) < projected.index(facts["aid"])
 
 
 def test_the_emitted_reply_records_are_the_ones_the_audit_accepted(tmp_path):

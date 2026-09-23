@@ -511,6 +511,41 @@ Production did:webs implementation on KERI = goal:
         copying files cannot change a signed alias. Accepted tradeoff: the rehearsal proves
         interoperability for a provisional location, not authority for the final one.
 
+    Hosted KEL replay carries witness receipt couples derived from verified signatures = decision:
+      id: t3q6azxm
+      why: >
+        The KERI v1 wire format permits a non-transferable witness's signature to travel either
+        as an indexed witness signature (-B, where the index names a witness in the event's
+        witness list) or as a non-transferable receipt couple (-C, where the witness prefix is
+        explicit). The pinned keripy replay emits -B from its accepted witness-signature store,
+        but Affinidi did-webs 0.7.0 parses -B without counting it toward the event's witness
+        threshold; its checker counts only -C. Add -C couples to hosted KEL events by mapping
+        each accepted -B signature to its witness prefix and verifying that signature over the
+        accepted event body before emission. Retain the original -B attachments, so keripy's
+        own re-ingest still enforces the threshold and the hosted stream remains a replay of
+        verified state. Reject an out-of-range index or a failed verification rather than
+        inventing a receipt. This costs duplicate encoding of the same signature but does not
+        add authority or require controller keys on the host. It does not solve Affinidi's
+        separate rejection of keripy's -I ACDC source seal: that implementation requires an
+        independently signed -F proof that the submitted credential does not provide, while
+        keripy's ACDC verifier requires -I. The cold-start interop harness preserves this
+        boundary as a reproducible failure until the parsers converge.
+
+    The cold-start interoperability checker bounds both artifact reads = decision:
+      id: 66uaey3q
+      why: >
+        The Affinidi checker is a separate Rust process, so the Python publication stream door
+        cannot bound what it reads. Both the CESR stream and the companion did.json are local
+        inputs to that checker, and reading either to EOF before measuring it would leave a
+        memory-exhaustion path in the diagnostic harness. Read at most 8 MiB plus one byte from
+        each artifact and refuse the overage before parsing or resolving. The stream uses the
+        publication door's 8 MiB flood guard; the companion document gets the same generous
+        ceiling rather than an independently tuned limit. This is a diagnostic input contract,
+        not a claim that a published document should normally be that large. A permanent,
+        named range error makes the refusal distinguishable from a missing file or a resolver
+        failure. The fixed bound also keeps the checker useful on adversarial artifacts without
+        making its result depend on a file size supplied by the artifact producer.
+
     The demo replay accepts one verified designation per AID = constraint:
       id: 52vtfve2
       why: >

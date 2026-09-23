@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from hio.base import doing
 from hio.help import decking
 from keri.app import grouping, habbing, signing
-from keri.core import coring, eventing, serdering
+from keri.core import coring, counting, eventing, serdering
 from keri.db.dbing import fetchTsgs
 from keri.kering import Vrsn_1_0
 from keri.vdr import credentialing, verifying
@@ -44,7 +44,7 @@ from keri.vdr.eventing import (
     Reger,  # `viring.Reger` in the reference; merged into vdr.eventing on this line
 )
 
-from didwebs import schemaing
+from didwebs import errors, schemaing
 
 #: The protocol version every event this module constructs carries. Never omit it.
 V1 = Vrsn_1_0
@@ -242,6 +242,85 @@ def _tel_bytes(reger, pre: str) -> bytes:
     return bytes(msgs)
 
 
+def _witness_receipt_couples(serder, witnesses, wigers) -> bytes:
+    """Encode accepted indexed witness signatures as named v1 receipt couples.
+
+    The signature bytes are unchanged. Verify their witness index and signature before naming
+    a witness in the output; a corrupt scratch database must never grant a false receipt.
+    """
+    if not wigers:
+        return b""
+    couples = bytearray(
+        counting.Counter(counting.Codens.NonTransReceiptCouples, count=len(wigers), version=V1).qb64b
+    )
+    for wiger in wigers:
+        try:
+            index = wiger.index
+            if type(index) is not int or not 0 <= index < len(witnesses):
+                raise ValueError("The witness index is invalid.")
+            verfer = coring.Verfer(qb64=witnesses[index])
+            if not verfer.verify(wiger.raw, serder.raw):
+                raise ValueError("The witness signature does not verify.")
+            # Cigar's default code is the 32-byte Ed25519 public-key code; specify the 64-byte
+            # signature code, or Matter silently truncates the signature while serializing it.
+            receipt = verfer.qb64b + coring.Cigar(
+                raw=wiger.raw, code=coring.MtrDex.Ed25519_Sig
+            ).qb64b
+        except Exception as error:
+            raise errors.WITNESS_REPLAY_CORRUPT(frame=serder.said) from error
+        couples.extend(receipt)
+    return bytes(couples)
+
+
+def _with_witness_receipts(msg: bytes, receipts: bytes, said: str, body_size: int) -> bytes:
+    """Place receipts before clone replay's final one-couple first-seen group.
+
+    keripy's v1 ``messagize`` emits non-transferable receipt couples before bonds, and
+    ``cloneEvtMsg`` always ends with one 64-byte first-seen replay couple (``-EAB``). Appending
+    after that group makes its framed parser treat the remainder as a new malformed frame.
+    """
+    if not receipts:
+        return bytes(msg)
+    if len(msg) < body_size + 68 or msg[-64:-60] != b"-EAB":
+        raise errors.WITNESS_REPLAY_CORRUPT(frame=said)
+    try:
+        wrapper = counting.Counter(qb64b=msg[body_size:], version=V1)
+        if (wrapper.code != counting.CtrDex_1_0.AttachmentGroup
+                or wrapper.count * 4 != len(msg) - body_size - wrapper.fullSize
+                or len(receipts) % 4):
+            raise ValueError("The replay attachment wrapper has an unexpected shape.")
+        enlarged = counting.Counter(
+            counting.Codens.AttachmentGroup,
+            count=wrapper.count + len(receipts) // 4,
+            version=V1,
+        )
+    except (ValueError, TypeError) as error:
+        raise errors.WITNESS_REPLAY_CORRUPT(frame=said) from error
+    return (
+        bytes(msg[:body_size]) + enlarged.qb64b
+        + bytes(msg[body_size + wrapper.fullSize:-64]) + receipts + bytes(msg[-64:])
+    )
+
+
+def _kel_replay_messages(db, messages):
+    """Project verified receipt couples onto every KEL event in replay order."""
+    witnesses_by_pre = {}
+    for msg in messages:
+        serder = serdering.SerderKERI(raw=msg)
+        pre = serder.pre
+        keys = (pre, serder.said)
+        if serder.estive:
+            witnesses_by_pre[pre] = [wit.qb64 for wit in db.wits.get(keys=keys)]
+        wigers = db.wigs.get(keys=keys)
+        receipts = _witness_receipt_couples(serder, witnesses_by_pre.get(pre, []), wigers)
+        yield _with_witness_receipts(msg, receipts, serder.said, serder.size)
+
+
+def _kel_replay(db, pre: str):
+    """Replay one KEL with its verified witness signatures in both v1 receipt forms."""
+    yield from _kel_replay_messages(db, db.clonePreIter(pre=pre, fn=0, gvrsn=V1))
+
+
 def emit_stream(verified) -> bytes:
     """Re-assemble the hosted ``keri.cesr`` for a verified publication (constraint ``embuup``).
 
@@ -276,9 +355,9 @@ def emit_stream(verified) -> bytes:
     msgs = bytearray()
     # `Hab.replay`'s recipe, driven on the database because a published AID is never a local
     # Hab: a delegate's events cannot be verified before its delegator's.
-    for msg in db.cloneDelegation(kever=kever, gvrsn=V1):
+    for msg in _kel_replay_messages(db, db.cloneDelegation(kever=kever, gvrsn=V1)):
         msgs.extend(msg)
-    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V1):
+    for msg in _kel_replay(db, verified.aid):
         msgs.extend(msg)
 
     for frame in verified.frames:
