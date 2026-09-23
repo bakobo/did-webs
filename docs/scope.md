@@ -158,8 +158,9 @@ Where it stops short of production, and where we therefore have work to do:
   operate witness infrastructure already.
 - **Untrusted data is persisted into the resolver's long-lived LMDB** with no per-request
   isolation — a poisoning/DoS surface in a shared resolver service.
-- **The generated document is incomplete**: no `@context`, no `authentication`, no
-  `assertionMethod` (both spec-mandatory), no deactivation detection. (The TS library emits
+- **The generated document is incomplete**: no `authentication` or
+  `assertionMethod` (both spec-mandatory), no deactivation detection; it also omits the optional
+  `@context` our publisher includes. (The TS library emits
   the relationships but does zero cryptographic verification, and the two GLEIF implementations
   disagree on VM type and threshold math — so "compare against the reference" is only a partial
   oracle.)
@@ -168,6 +169,24 @@ Where it stops short of production, and where we therefore have work to do:
   end-to-end tamper-detection test commented out, CLI layer excluded from coverage.
 - `versionId` and `transformKeys` parameters: parsed but not implemented (confirmed in the
   talk).
+
+The SEDI M7 localhost rehearsal (2026-09-23) made the document gap an observed interop failure,
+not just a source comparison. GLEIF `dws` 0.3.7 / keripy 1.2.14 ingested each witnessed
+`keri.cesr` and derived the same current verification key, including Guy's rotated key, but
+refused the published `did.json`: its comparison expects no optional `@context`, no
+`controller`, `authentication`, or `assertionMethod`, and expects the `did:web` twin in `alsoKnownAs` where
+our spec-derived document carries `did:keri`. The spec requires the three other omitted
+properties or their transformation, so dropping them to pass GLEIF would be unsound. A
+diagnostic copy using GLEIF's own document shape resolved both DIDs and refused one-byte
+changes to either artifact; it is not the product output. ~4cqs
+
+A second independent implementation exists: Affinidi's Rust `affinidi-did-webs` 0.7.0. It
+refused the same stream at the ACDC's v1 `-I` source-seal-triple counter. With the ACDC removed
+for diagnosis, it then reported zero witness receipts despite the `-B` indexed witness
+signatures in the KEL attachments: its receipt-threshold path reads nontransferable receipt
+couples, not those indexed signatures. Neither refusal establishes a defect in the hosted
+artifacts, but neither is an interop pass. Reconcile the attachment and receipt dialects
+against the spec before claiming an independent resolver success. ~7x44
 
 ## Proposed scope for Bakobo's implementation
 
