@@ -198,10 +198,12 @@ def test_https_serves_the_cesr_media_type(tmp_path):
 
 def test_https_main_binds_loopback_and_closes_servers(monkeypatch, tmp_path):
     events = []
+    contexts = []
 
     class FakeTLS:
         def __init__(self, protocol):
             events.append(("tls", protocol))
+            contexts.append(self)
 
         def load_cert_chain(self, cert, key):
             events.append(("cert", cert, key))
@@ -248,6 +250,7 @@ def test_https_main_binds_loopback_and_closes_servers(monkeypatch, tmp_path):
         ["sedi_m7_https.py", "--root", str(tmp_path), "--cert", "cert", "--key", "key"],
     )
     sedi_m7_https.main()
+    assert contexts[0].minimum_version == sedi_m7_https.ssl.TLSVersion.TLSv1_2
     assert events.count(("serve",)) == 2
     assert ("bind", ("127.0.0.1", 8443)) in events
     assert ("bind", ("127.0.0.1", 8444)) in events

@@ -102,6 +102,7 @@ def main() -> None:
     handler = partial(ArtifactHandler, directory=str(args.root.resolve()))
     https = ThreadingHTTPServer(("127.0.0.1", args.https_port), handler)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.minimum_version = ssl.TLSVersion.TLSv1_2
     tls.load_cert_chain(args.cert, args.key)
     https.socket = tls.wrap_socket(https.socket, server_side=True)
 
