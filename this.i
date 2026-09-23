@@ -510,3 +510,15 @@ Production did:webs implementation on KERI = goal:
         designated-aliases ACDCs and their did:webs DIDs must be re-minted; changing DNS or
         copying files cannot change a signed alias. Accepted tradeoff: the rehearsal proves
         interoperability for a provisional location, not authority for the final one.
+
+    The demo replay accepts one verified designation per AID = constraint:
+      id: 52vtfve2
+      why: >
+        The cold-start recipe uses KLI for witnessed AIDs and this repo's v1 issuance adapter,
+        because the pinned KLI VC commands emit v2 anchors and replay counters. The adapter
+        uses witness OOBIs verified by KLI before assigning their localhost transport URLs,
+        and exports exactly one designated-aliases credential per AID; with zero it has no
+        authorization to publish, and with more than one it cannot choose which signed alias
+        set the demo means. Rejected picking the first stored credential or trusting a witness
+        URL before its OOBI resolves, because either would let incidental local state change
+        what is published. This is a rehearsal constraint, not a new customer issuance API.
