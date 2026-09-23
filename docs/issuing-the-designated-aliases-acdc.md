@@ -4,7 +4,7 @@ Bakobo does not hold your keys. The `didwebs publish` pipeline takes a CESR stre
 
 ## What the stream must contain
 
-One file, CESR, carrying five things in this order:
+One file, CESR, carrying four things in this order:
 
 1. **The claimed AID's key event log**, complete from inception. If the AID is delegated, its delegator's KEL comes first — a delegate's events cannot be verified before the events that authorize them.
 2. **The registry transaction event log** — the `vcp` that incepted the credential registry, anchored in the AID's own KEL.
@@ -24,7 +24,7 @@ The schema is pinned and not negotiable: `EN6Oh5XSD5_q2Hgu-aqpdfbVepdpYpFlgz6zvJ
 
 ## With `kli`
 
-The sequence below is the reference implementation's own, from GLEIF's `did-webs-resolver` `docs/getting_started.md`. Assuming you already have a keystore and an incepted AID:
+The sequence below is the reference implementation's own, from GLEIF's `did-webs-resolver` `docs/getting_started.md`, for its keripy 1.2.x line. It is **not directly usable with this repository's pinned keripy 2.0.0-dev6**: its `kli vc registry incept` and `kli vc create` omit the v1 version on KEL anchor interactions, so those events default to v2, and `kli vc export` has `--full` rather than `--chain` but replays v2 attachment counters. The SEDI M7 recipe in `scripts/sedi_m7.sh` uses KLI for witnessed AID inception and rotation, then `didwebs.assemble.issue_aliases` and an explicit v1 replay for the credential and publication stream. Assuming a compatible 1.2.x keystore and an incepted AID, the historical sequence is:
 
 Incept a credential registry:
 
@@ -53,7 +53,7 @@ Export the credential with its supporting material:
 kli vc export --name my-keystore --alias my-controller --said <ACDC SAID> --chain
 ```
 
-`--chain` is what makes the output a publication stream rather than a bare credential: it pulls in the KEL and both transaction logs alongside the ACDC. Redirect it to a file and that file is what you submit.
+On the reference implementation's keripy line, `--chain` pulls in the KEL and both transaction logs alongside the ACDC. On the pinned 2.0.0-dev6 CLI, `--full` is the corresponding flag, but its output is still not a valid v1 publication stream for this pipeline because its KEL replay defaults to v2 attachment counters. Use the tested M7 adapter or another exporter that pins both protocol and CESR genus to v1.
 
 ## With KERIA and a Signify client
 
@@ -95,4 +95,5 @@ Being precise about this, because the difference matters if something does not w
 - **Verified in this repository, under test**: every constraint in *What the stream must contain*. These are enforced by `didwebs` and covered by its own suite.
 - **Verified by reading source**: the KERIA export endpoint's content and ordering (`keria/app/credentialing.py`, `CredentialResourceEnd.outputCred`), the signify-ts client call (`src/keri/app/credentialing.ts`), and the data-OOBI requirement for issuance.
 - **Taken from the reference implementation's documentation**: the `kli` command sequence and the schema OOBI URL, both from GLEIF `did-webs-resolver` `docs/getting_started.md`.
-- **Not verified end to end**: neither toolchain has been run against a live agent and the resulting stream fed to `didwebs publish`. The `kli` path is the one the reference implementation itself documents and is the safer starting point. If you hit something this document gets wrong, that is worth telling us — it means this page needs a correction, not that you did it wrong.
+- **Verified in the M7 rehearsal**: KLI incepted and rotated two AIDs with three local witnesses and a threshold of two; the v1 adapter issued each designated-aliases ACDC, exported its stream, and `didwebs publish` accepted both and Guy's update. The interop limits are summarized in `docs/scope.md`.
+- **Not verified end to end**: the unmodified KLI VC export path or the KERIA path as a direct input to `didwebs publish`. If you hit something this document gets wrong, that is worth telling us — it means this page needs a correction, not that you did it wrong.
