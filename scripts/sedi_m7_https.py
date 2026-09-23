@@ -19,6 +19,23 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
 
+from bakobo.errors import ErrorCode
+
+PORT_FORMAT_INVALID = ErrorCode(
+    "e.input.format.listen-port.f",
+    "The listener port must be a whole number.",
+    detail="{value} is not a whole-number listener port.",
+    args=("value",),
+    hint="Use a whole-number port from 1 through 65535.",
+)
+PORT_RANGE_INVALID = ErrorCode(
+    "e.input.range.listen-port.f",
+    "The listener port is outside the valid range.",
+    detail="Port {value} must be from 1 through 65535.",
+    args=("value",),
+    hint="Use a port from 1 through 65535.",
+)
+
 
 class ArtifactHandler(SimpleHTTPRequestHandler):
     extensions_map: ClassVar[dict[str, str]] = {
@@ -31,6 +48,16 @@ PROXY_TARGET_INVALID = b"e.input.format.proxy-target.f: The proxy accepts CONNEC
 PROXY_HEADERS_TOO_LARGE = (
     b"e.input.range.proxy-headers.f: The CONNECT headers exceed the 16384-byte limit.\n"
 )
+
+
+def _port(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(PORT_FORMAT_INVALID(value=value))) from exc
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError(str(PORT_RANGE_INVALID(value=value)))
+    return port
 
 
 def _refuse(
@@ -95,8 +122,8 @@ def main() -> None:
     parser.add_argument("--cert", type=Path, required=True)
     parser.add_argument("--key", type=Path, required=True)
     parser.add_argument("--host", default="dids.bakobo.com")
-    parser.add_argument("--https-port", type=int, default=8443)
-    parser.add_argument("--proxy-port", type=int, default=8444)
+    parser.add_argument("--https-port", type=_port, default=8443)
+    parser.add_argument("--proxy-port", type=_port, default=8444)
     args = parser.parse_args()
 
     handler = partial(ArtifactHandler, directory=str(args.root.resolve()))

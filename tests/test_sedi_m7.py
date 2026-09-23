@@ -45,8 +45,31 @@ def _borrow(monkeypatch, hby, regery):
 
     borrowed = _OpenRegery(regery)
     monkeypatch.setattr(sedi_m7_keri, "openHby", opening)
+    monkeypatch.setattr(sedi_m7_keri, "Reger", lambda **_: regery.reger)
     monkeypatch.setattr(sedi_m7_keri, "Regery", lambda **_: borrowed)
     return borrowed
+
+
+def test_demo_registry_is_rooted_in_the_selected_keystore(tmp_path, monkeypatch):
+    with keri_api.scratch("m7-root", tmp_path) as (hby, regery):
+        seen = []
+        monkeypatch.setattr(
+            sedi_m7_keri,
+            "Reger",
+            lambda **kwargs: seen.append(kwargs) or regery.reger,
+        )
+        opened = sedi_m7_keri._open_regery(hby, "guy", "selected-base")
+        assert opened.hby is hby
+        assert seen == [
+            {
+                "name": "guy",
+                "base": "",
+                "db": hby.db,
+                "temp": False,
+                "headDirPath": hby.ks.path,
+                "reopen": True,
+            }
+        ]
 
 
 def test_demo_issues_and_exports_a_verified_v1_publication(tmp_path, monkeypatch):
@@ -54,6 +77,27 @@ def test_demo_issues_and_exports_a_verified_v1_publication(tmp_path, monkeypatch
         hab = keri_api.make_hab(hby, "guy")
         borrowed = _borrow(monkeypatch, hby, regery)
         said = sedi_m7_keri.issue("guy", "unused", "dids.example.test", "demo")
+        original = regery.reger.creds.getTopItemIter
+        monkeypatch.setattr(
+            regery.reger.creds,
+            "getTopItemIter",
+            lambda: iter(
+                [
+                    (
+                        ("other-schema",),
+                        SimpleNamespace(schema="other", israid=hab.pre),
+                    ),
+                    (
+                        ("other-issuer",),
+                        SimpleNamespace(
+                            schema=sedi_m7_keri.schemaing.DES_ALIASES_SCHEMA_SAID,
+                            israid="other",
+                        ),
+                    ),
+                    *original(),
+                ]
+            ),
+        )
         stream_path = tmp_path / "stream" / "guy.cesr"
         aid = sedi_m7_keri.export("guy", "unused", stream_path)
 
@@ -81,10 +125,37 @@ def test_demo_refuses_an_unverified_witness_and_missing_credential(
             sedi_m7_keri.seed_locations("guy", "unused")
         with pytest.raises(BakoboError, match="e.state.missing.alias-acdc.r"):
             sedi_m7_keri.export("guy", "unused", tmp_path / "empty.cesr")
+        wrong_schema = SimpleNamespace(schema="other-schema", israid=hab.pre)
+        wrong_issuer = SimpleNamespace(
+            schema=sedi_m7_keri.schemaing.DES_ALIASES_SCHEMA_SAID,
+            israid="other-issuer",
+        )
+        matching = SimpleNamespace(
+            schema=sedi_m7_keri.schemaing.DES_ALIASES_SCHEMA_SAID,
+            israid=hab.pre,
+        )
+        foreign = SimpleNamespace(
+            reger=SimpleNamespace(
+                creds=SimpleNamespace(
+                    getTopItemIter=lambda: iter(
+                        [
+                            (("wrong-schema",), wrong_schema),
+                            (("wrong-issuer",), wrong_issuer),
+                        ]
+                    )
+                )
+            ),
+            close=lambda: None,
+        )
+        monkeypatch.setattr(sedi_m7_keri, "Regery", lambda **_: foreign)
+        with pytest.raises(BakoboError, match="e.state.missing.alias-acdc.r"):
+            sedi_m7_keri.export("guy", "unused", tmp_path / "foreign.cesr")
         duplicate = SimpleNamespace(
             reger=SimpleNamespace(
                 creds=SimpleNamespace(
-                    getTopItemIter=lambda: iter([(("one",), None), (("two",), None)])
+                    getTopItemIter=lambda: iter(
+                        [(("one",), matching), (("two",), matching)]
+                    )
                 )
             ),
             close=lambda: None,
@@ -94,6 +165,7 @@ def test_demo_refuses_an_unverified_witness_and_missing_credential(
             sedi_m7_keri.export("guy", "unused", tmp_path / "ambiguous.cesr")
         assert borrowed.closed
         assert not (tmp_path / "empty.cesr").exists()
+        assert not (tmp_path / "foreign.cesr").exists()
         assert not (tmp_path / "ambiguous.cesr").exists()
 
 
@@ -263,3 +335,38 @@ def test_https_module_entrypoint_shows_help(monkeypatch, capsys):
         runpy.run_module("scripts.sedi_m7_https", run_name="__main__")
     assert error.value.code == 0
     assert "--proxy-port" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("flag", "value", "code"),
+    [
+        ("--https-port", "0", "e.input.range.listen-port.f"),
+        ("--proxy-port", "65536", "e.input.range.listen-port.f"),
+        ("--https-port", "invalid", "e.input.format.listen-port.f"),
+    ],
+)
+def test_https_refuses_invalid_ports(monkeypatch, capsys, tmp_path, flag, value, code):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sedi_m7_https.py",
+            "--root",
+            str(tmp_path),
+            "--cert",
+            "cert",
+            "--key",
+            "key",
+            flag,
+            value,
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        sedi_m7_https.main()
+    assert error.value.code == 2
+    assert code in capsys.readouterr().err
+
+
+def test_https_accepts_both_valid_port_bounds():
+    assert sedi_m7_https._port("1") == 1
+    assert sedi_m7_https._port("65535") == 65535

@@ -17,7 +17,9 @@ from keri.app.habbing import openHby
 from keri.kering import Vrsn_1_0
 from keri.recording import LocationRecord
 from keri.vdr.credentialing import Regery
+from keri.vdr.eventing import Reger
 
+from didwebs import schemaing
 from didwebs.assemble import issue_aliases
 from didwebs.did import parse as parse_did
 
@@ -57,6 +59,24 @@ WITNESSES = (
 )
 
 
+def _open_regery(hby, name: str, base: str) -> Regery:
+    """Keep the demo registry inside its selected KLI keystore."""
+    return Regery(
+        hby=hby,
+        name=name,
+        base=base,
+        temp=False,
+        reger=Reger(
+            name=name,
+            base="",
+            db=hby.db,
+            temp=False,
+            headDirPath=hby.ks.path,
+            reopen=True,
+        ),
+    )
+
+
 def seed_locations(name: str, base: str) -> None:
     """Give KLI the localhost transport addresses of verified witness OOBIs."""
     with openHby(name=name, base=base, temp=False, version=Vrsn_1_0) as hby:
@@ -73,7 +93,7 @@ def issue(name: str, base: str, host: str, path_prefix: str) -> str:
     """Issue both DID spellings from one witnessed KLI AID, using v1 throughout."""
     with openHby(name=name, base=base, temp=False, version=Vrsn_1_0) as hby:
         hab = hby.habByName(name)
-        regery = Regery(hby=hby, name=name, base=base)
+        regery = _open_regery(hby, name, base)
         try:
             aid = hab.pre
             webs = f"did:webs:{host}:{path_prefix}:{aid}"
@@ -89,14 +109,19 @@ def export(name: str, base: str, path: Path) -> str:
     """Export the AID's KEL, TELs, and ACDC in the v1 publication order."""
     with openHby(name=name, base=base, temp=False, version=Vrsn_1_0) as hby:
         hab = hby.habByName(name)
-        regery = Regery(hby=hby, name=name, base=base)
+        regery = _open_regery(hby, name, base)
         try:
-            credentials = list(regery.reger.creds.getTopItemIter())
+            credentials = [
+                said
+                for (said,), creder in regery.reger.creds.getTopItemIter()
+                if creder.schema == schemaing.DES_ALIASES_SCHEMA_SAID
+                and creder.israid == hab.pre
+            ]
             if not credentials:
                 raise ALIAS_ACDC_MISSING(name=name)
             if len(credentials) > 1:
                 raise ALIAS_ACDC_AMBIGUOUS(name=name)
-            (said,), _ = credentials[0]
+            said = credentials[0]
             creder, *_ = regery.reger.cloneCred(said=said)
             stream = bytearray()
             for msg in hby.db.clonePreIter(pre=hab.pre, gvrsn=Vrsn_1_0):
