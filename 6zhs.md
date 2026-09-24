@@ -3,3 +3,4 @@ kind: debt
 tags: affinidi, upstream
 created: 2026-09-24T21:44Z
 
+- 2026-09-24T21:45Z Durable copies of the /tmp files cited above: /home/daniel/code/bakobo/did-webs/.ignored/summit-2026-09-24/
