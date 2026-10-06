@@ -252,15 +252,32 @@ def test_the_gate_rejects_a_walked_frame_whose_protocol_version_is_not_v1(tmp_pa
     assert caught.value.code == "e.input.format.stream.f"
 
 
-def test_every_parser_call_site_pins_the_v1_cesr_genus():
+#: The only genus arguments a parser call site in ingest may pass: the v1 pin, or the version
+#: the stream was read under (decision 8686h4tf). Never keripy's default.
+_PINNED_GENUS = ("version=V1", "version=version", "version=self.version")
+
+
+def test_every_parser_call_site_pins_its_cesr_genus_explicitly():
     """Constraint qbqfst's parse-side leg: the genus default is v2, and a v1 stream fed to a
-    v2-genus parser yields nothing at all — no exception, no diagnostic (design §Shape)."""
+    v2-genus parser yields nothing at all — no exception, no diagnostic (design §Shape). Since
+    v2 publications, a site may also pass the stream's own version, but never the default."""
     text = Path(ingest.__file__).read_text(encoding="utf-8")
     sites = [line for line in text.splitlines() if "Parser(" in line or ".parse(" in line]
 
     assert sites, "expected at least one parser call site to pin"
     for site in sites:
-        assert "version=V1" in site or "version=V1" in text.split(site)[1][:400]
+        window = site + text.split(site)[1][:400]
+        assert any(pin in window for pin in _PINNED_GENUS), site
+
+
+def test_a_v1_stream_is_parsed_under_the_v1_genus_whatever_the_v2_path_does(tmp_path):
+    """The version is read from the stream, so a v1 stream must still select V1 everywhere."""
+    stream, _ = fixture("base", tmp_path)
+
+    assert ingest.walk(stream).version == ingest.V1
+    with ingest.open_scratch(ingest.stream_version(stream)) as scratch:
+        assert scratch.version == ingest.V1
+        assert scratch.hby.version == ingest.V1
 
 
 def test_keri_api_smoke_ingest_is_not_wired_into_the_product_path():

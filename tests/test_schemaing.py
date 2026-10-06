@@ -14,6 +14,7 @@ import keri_api
 import pytest
 from bakobo.errors import BakoboError
 from keri.core import scheming
+from keri.kering import ValidationError
 
 from didwebs import schemaing
 
@@ -108,3 +109,73 @@ def test_the_schema_resource_is_shipped_inside_the_package_not_read_from_the_rep
 
     path = resources.files("didwebs").joinpath("schemas", schemaing.SCHEMA_RESOURCE)
     assert json.loads(path.read_text(encoding="utf-8"))["$id"] == PINNED_SAID
+
+
+# ----------------------------------------------------- the proposed v2 schema (35yl884k)
+
+PINNED_V2_SAID = "EF9Iy-vwD8GRKghnzHHGwAA6sC0VEWNtZ2Sf4tfd4IAA"
+
+
+def test_the_v2_schema_is_pinned_to_its_said():
+    assert schemaing.DES_ALIASES_SCHEMA_V2_SAID == PINNED_V2_SAID
+    assert schemaing.load_designated_aliases_schema_v2().said == PINNED_V2_SAID
+
+
+def test_the_v2_schema_differs_from_v1_only_where_a_v2_acdc_does():
+    """Decision 35yl884k's derivation, held as an oracle rather than as prose: ``ri`` is renamed
+    ``rd`` in place, ``t`` (required, ``acm``) is admitted, properties take v2 field order,
+    ``version`` is 2.0.0, and nothing else moves. There is no ``u``: a public attestation."""
+    v1 = schemaing.read_designated_aliases_schema()
+    v2 = schemaing.read_designated_aliases_schema_v2()
+
+    assert list(v2["properties"]) == ["v", "t", "d", "i", "rd", "s", "a", "r"]
+    assert v2["properties"]["rd"] == v1["properties"]["ri"]
+    assert v2["properties"]["t"]["const"] == "acm"
+    assert "u" not in v2["properties"]
+    assert v2["required"] == ["v", "t", "d", "i", "rd", "s", "a", "r"]
+    assert v2["version"] == "2.0.0"
+    for field in ("v", "d", "i", "s", "a", "r"):
+        assert v2["properties"][field] == v1["properties"][field]
+    unchanged = set(v1) - {"$id", "version", "properties", "required"}
+    assert {key: v2[key] for key in unchanged} == {key: v1[key] for key in unchanged}
+
+
+def test_a_mutated_v2_schema_is_refused_naming_the_v2_pin(monkeypatch):
+    sed = schemaing.read_designated_aliases_schema_v2()
+    sed["description"] = "tampered"
+    monkeypatch.setattr(schemaing, "read_designated_aliases_schema_v2", lambda: sed)
+
+    with pytest.raises(BakoboError) as excinfo:
+        schemaing.load_designated_aliases_schema_v2()
+
+    assert excinfo.value.code == "e.self.corrupt.schema.f"
+    assert PINNED_V2_SAID in str(excinfo.value)
+
+
+def test_the_v1_schema_does_not_validate_a_v2_shaped_body_and_the_v2_one_does():
+    """Why a second schema exists at all: v1 requires ``ri`` and forbids ``u``/``t``."""
+    body = {
+        "v": "ACDCCAACAAJSONAAAA.", "t": "acm", "d": "", "i": "E" * 44,
+        "rd": "E" * 44, "s": PINNED_V2_SAID,
+        "a": {"d": "", "dt": "2026-10-06T00:00:00.000000+00:00", "ids": []},
+        "r": schemaing.read_designated_aliases_rules(),
+    }
+    raw = json.dumps(body).encode()
+
+    with pytest.raises(ValidationError):  # keripy's verify raises rather than returning False
+        schemaing.load_designated_aliases_schema().verify(raw)
+    assert schemaing.load_designated_aliases_schema_v2().verify(raw)
+
+
+def test_the_v2_schema_refuses_any_top_level_u():
+    """A public attestation (35yl884k): an empty u is a metadata ACDC, a non-empty one private."""
+    schemer = schemaing.load_designated_aliases_schema_v2()
+    for u in ("", "0AAxyzNonceNonceNonceNon"):
+        body = {
+            "v": "ACDCCAACAAJSONAAAA.", "t": "acm", "d": "", "u": u, "i": "E" * 44,
+            "rd": "E" * 44, "s": PINNED_V2_SAID,
+            "a": {"d": "", "dt": "2026-10-06T00:00:00.000000+00:00", "ids": []},
+            "r": schemaing.read_designated_aliases_rules(),
+        }
+        with pytest.raises(ValidationError):
+            schemer.verify(json.dumps(body).encode())

@@ -212,11 +212,15 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 | `e.input.format.did.f` | string is not a valid did:webs identifier |
 | `e.input.format.stream.f` | stream cannot be walked frame-by-frame (garbled CESR, unversioned frame) |
 | `e.feature.unsupported.serialization.f` | walkable v1 frame outside the JSON-only accepted set (CBOR/MGPK) |
+| `e.feature.unsupported.registry.event.f` | a v2 registry event other than `rip`/`bup` — `upd` is the case: the ACDC spec lists it, WebOfTrust keripy refuses it (decision `0plkq8s8`) |
 | `e.input.missing.alias-acdc.f` | no designated-aliases ACDC in the stream (absence established: we hold and walked the whole stream) |
 | `e.input.missing.delegator.f` | delegated AID but no delegator KEL in the stream |
-| `e.proof.stream.*.f` (leaves per audit source: `sig`, `seal`, `anchor`, `frame`) | a walked frame not accepted by keripy — attributed via the escrow/accounting audit |
+| `e.rule.stream.version.f` | keystore side: a v2 registry requested for a controller whose KEL is another protocol version (decision `8686h4tf`) |
+| `e.self.anchor.registry.f` | keystore side: keripy did not commit a v2 registry event after it was anchored — our fault, never the caller's |
+| `e.input.missing.registry.event.f` | the issuer's KEL anchors a v2 registry event the stream omits — completeness, which `vet`/`vetBinds` do not check (decision `3kn6drgf`) |
+| `e.proof.stream.*.f` (leaves per audit source: `sig`, `seal`, `anchor`, `frame`, `disclosure`) | a walked frame not accepted by keripy — attributed via the escrow/accounting audit; for v2, a registry event `regeventing.vet` refuses (`anchor`, `frame`), or a `bup` without a verifiable BlindedStateQuadruples disclosure (`disclosure`, decision `3kn6drgf`) |
 | `e.state.conflict.kel.f` | likely-duplicitous escrow non-empty: the submission forks its own KEL |
-| `e.state.revoked.alias-acdc.f` | designated-aliases ACDC revoked per direct `Tever.vcState` query |
+| `e.state.revoked.alias-acdc.f` | designated-aliases ACDC revoked per direct `Tever.vcState` query (v1), or the v2 registry head's disclosed state is anything but `issued` |
 | `e.grant.missing.alias.f` | ACDC present but not the claimed AID's authorization (wrong issuer, or registry not anchored in the claimed AID's KEL) |
 | `e.grant.scope.alias.f` | controller's own ACDC does not cover the claimed DID (or its did:web form) under normalized equality |
 | `e.rule.alias.aid.mismatch.f` | an `a.ids` entry names a different AID than the stream verifies (spec same-AID constraint) |
@@ -233,6 +237,28 @@ Boundary reasoning follows the standard: what is decidable from the submission a
 settled boundary; an ACDC that is not the controller's authorization, or doesn't cover the
 DID, is `grant` (missing vs. scope); a well-formed, well-authorized assertion that violates a
 spec norm we enforce is `rule`; capabilities nobody gets in v1 are `feature.unsupported`.
+
+## KERI protocol v2
+
+Decisions `0plkq8s8`, `8686h4tf`, `3kn6drgf` and `35yl884k` in `this.i`, added 2026-10-06. Everything above describes v1 and still holds for it, byte for byte; this section says what differs for a v2 publication and why.
+
+**Whose v2.** The target is what stock WebOfTrust keripy and the KERI and ACDC specs accept, and nothing beyond it. Our keripy pin is a fork branch that also verifies `upd` registry updates; WebOfTrust main refuses them (`keri/acdc/regeventing.py:121` at `624df8294`), so we refuse them too, by name (`e.feature.unsupported.registry.event.f`). A separate oracle, `tests/test_upstream_v2.py`, runs every v2 stream we emit through WebOfTrust keripy main in its own venv, because passing our own suite on the fork proves less than it looks.
+
+**The version comes from the stream.** There is no flag. A v2 stream opens with the CESR v2 genus-version counter (`ingest.stream_version`); a stream with no counter is v1, which is what every deployed did:webs publication is — keripy's own Parser defaults to v2, so this is a rule a resolver must be told rather than one it inherits (panel SPC-F1); the walk, the scratch `Habery` and every parse are then pinned to that version exactly as the v1 path pins V1, so the `qbqfst` discipline carries over unchanged. A frame of the other major version is a format fault: one stream is one version. Neither spec forbids mixing, and keripy never re-checks a Kever's version after inception, so this is a fail-closed choice until the spec says what a mixed stream means.
+
+**Registries are vetted, not parsed.** A v2 registry is an ACDC-protocol `rip` followed by blindable updates, `bup`. keripy's `Parser.msgProcess` refuses every ACDC message whose ilk is not null, so these frames never reach a Tevery or Verifier and nothing would ever call them accepted. The walk keeps them; `ingest.vet_registries` hands each registry, with every update, to `keri.acdc.regeventing.vet` — keripy's own party-side verifier — against the KEL the parser accepted, and that verdict is what "accepted" means for them in the accounting audit. A credential is accepted only when a vetted registry head binds it mutually and it validates against the schema it names: nothing in keripy saves or schema-checks a v2 credential, so that check is ours.
+
+**State is read the way keripy reads an issuer registry.** A `bup` blinds its state; a resolver can tell whether the designation still stands only if the blinded state is disclosed, which the ACDC spec's public blindable mode provides as BlindedStateQuadruples (`-a`) groups (ACDC spec `spec-body.md:2062`, `:2367` at `f0bd097`). Registries are read with keripy's `vetBinds`, the verifier its own IPEX uses for issuer registries: disclosures are matched to updates by BLID wherever the stream carries them, every update from the head back to the latest non-vacuous one needs exactly one (`e.proof.stream.disclosure.f` otherwise), and the state is that latest non-vacuous update's, so a vacated head (`Registrar.vacate`) leaves the prior state in force. Revocation is that state reading anything but `issued`; keripy gives the state no meaning, so that policy is ours and fails closed. What we host always carries each disclosure on its own update.
+
+**Completeness.** `vet` and `vetBinds` verify what is presented and never that everything anchored was presented, so a stream that left out the update revoking a designation would read as issued. Ingest therefore requires every event of a registry that the issuer's accepted KEL anchors to be in the stream (`e.input.missing.registry.event.f`). The same gap exists in the v1 path and is being fixed separately.
+
+**The schema is proposed.** A v2 credential cannot validate against the v1 designated-aliases schema (`EN6Oh5…` requires `ri`), and the spec names no schema for either version. `EF9Iy-vwD8GRKghnzHHGwAA6sC0VEWNtZ2Sf4tfd4IAA` is derived from v1 exactly as follows, and nothing else changes: `ri` becomes `rd` with v1's definition; `t` is added, required, `const: acm`; properties are ordered `v t d i rd s a r` and `required` follows that order; `version` becomes `2.0.0`. `tools/mint-v2-aliases-schema` reproduces it and a test holds the derivation. It stays labelled proposed until the spec adopts one. Like v1, it admits no top-level `u`: the ACDC spec makes an absent `u` the public variant, an empty one a metadata ACDC and a non-empty one a private one (`spec-body.md:126`, `:168`), so the schema itself refuses every non-public variant of a public attestation.
+
+**The hosted stream.** `emit_stream` re-derives `keri.cesr` from verified state as for v1: one genus-version counter, the KEL (delegator first) cloned at genus v2, accepted `rpy` records, the accepted credentials, then each vetted registry with its updates and their verified disclosures. Two differences from v1 are deliberate. The KEL is keripy's own v2 clone, without v1's projection of witness signatures into receipt couples, which serves v1 consumers and is written in v1 counters. And credentials precede registries so the stream ends on an attached update: keripy's extractor cannot finish an attachment-less final frame, which ingest also tolerates from producers that order differently.
+
+**What is not yet shown.** No test publishes a witnessed v2 AID, because in-process witnesses are not available here (tick `~5zmu`). The 2026-10-06 spike round-tripped a witnessed, rotated heti v2 AID through equivalent code, which is evidence but not a test; it is the case that would catch a mistake in dropping v1's receipt-couple projection. An empty attachment group (`-CAA`) after an attachment-less frame is refused, as keripy refuses it.
+
+**Error codes added.** `e.feature.unsupported.registry.event.f`, `e.input.missing.registry.event.f` and the `disclosure` leaf of `e.proof.stream.*.f`, all in the table above; anchor faults `vet` names reuse `e.proof.stream.anchor.f`, and any other registry-chain fault `e.proof.stream.frame.f`.
 
 ## Test strategy and oracles
 
@@ -254,8 +280,8 @@ of new code. Oracles, strongest first:
 2. **Round-trip identity**: `emit_stream` output re-ingested by our own `ingest` reproduces
    identical verified state and an identical derived document (the derived-artifact analogue
    of the spec's step-7 equality gate).
-3. **Version-string oracle**: every emitted stream contains only `KERI10JSON`/`ACDC10JSON`
-   frames (constraint `qbqfst` discharge).
+3. **Version-string oracle**: every emitted v1 stream contains only `KERI10JSON`/`ACDC10JSON`
+   frames (constraint `qbqfst` discharge). A v2 stream is held to the same rule in v2: every frame is read under the stream's own genus, and a frame of the other version is refused.
 4. **Spec worked examples** (`### Full Example`, `#### The full KERI event stream`) as golden
    fixtures for document shape; mismatches are findings against us *or the spec* — spec-side
    mismatches feed the upstream-issues drafts, not silent test adjustments.

@@ -37,6 +37,8 @@ uv run didwebs publish --stream <keri.cesr> --did <did:webs:...> --out <dir>
 output directory. Refusal leaves no artifact tree behind: either both files appear or neither
 does. Run `uv run didwebs publish --help` for the full argument list.
 
+Both KERI protocol versions are accepted, and the version is read from the stream: a v2 stream announces itself with its CESR genus-version counter. v2 support follows what stock WebOfTrust keripy accepts and uses a proposed v2 designated-aliases schema, because the did:webs specification does not yet say what a v2 publication is; see the "KERI protocol v2" section of [`docs/design.md`](docs/design.md). No third-party did:webs resolver reads v2 yet, so prefer v1 where you have the choice.
+
 Producing that stream is the controller's job — Bakobo holds no customer keys — so
 [`docs/issuing-the-designated-aliases-acdc.md`](docs/issuing-the-designated-aliases-acdc.md)
 says what the stream must contain and how to get it out of `kli` or KERIA.
