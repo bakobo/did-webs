@@ -7,13 +7,14 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 25 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
+The 27 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
 from that table's rev 2 (2026-08-14); `e.input.range.stream.f` was added with the stream door
 (constraint `adyiw2mm`), and `e.self.corrupt.did.f` with the artifact-join containment check
 (constraint `a2sbz34i`), and `e.self.corrupt.witness-replay.f` with the interop replay
 (decision `t3q6azxm`), and `e.feature.unsupported.registry.event.f`,
-`e.proof.stream.disclosure.f` and `e.input.missing.registry.event.f` with KERI protocol v2
-(decisions `0plkq8s8`, `3kn6drgf`). The
+`e.proof.stream.disclosure.f`, `e.input.missing.registry.event.f`,
+`e.rule.stream.version.f` and `e.self.anchor.registry.f` with KERI protocol v2 (decisions
+`0plkq8s8`, `3kn6drgf`, `8686h4tf`). The
 table carries fewer rows than codes, because `e.proof.stream.*.f` is written once and names its
 five leaves — `sig`, `seal`, `anchor`, `frame`, `disclosure` — in the same cell, the audit
 picking between them by which escrow held the frame or which registry check refused it.
@@ -118,6 +119,28 @@ REGISTRY_EVENT_UNSUPPORTED = ErrorCode(
 )
 # Decision 0plkq8s8. `upd` is the case that motivated it: the ACDC spec still lists it, keripy
 # main dropped it, so a stream depending on it is not one the reference verifier accepts.
+
+STREAM_VERSION_MIXED = ErrorCode(
+    "e.rule.stream.version.f",
+    "A v2 registry cannot be anchored in a key event log of another protocol version.",
+    detail="{aid} keeps a protocol {version} key event log, and a v2 registry anchored in it "
+    "would make a publication stream mix versions, which this build refuses.",
+    args=("aid", "version"),
+    hint="Issue a v2 designation from a controller whose key event log is protocol v2, or a v1 "
+    "designation from this one.",
+)
+# Decision 8686h4tf, enforced at the keystore side so a mixed stream is never produced at all.
+
+REGISTRY_ANCHOR_UNCOMMITTED = ErrorCode(
+    "e.self.anchor.registry.f",
+    "The keripy registry engine did not commit a registry event after it was anchored.",
+    detail="The registry event {said} was sealed in the controller's key event log, and keripy's "
+    "registry engine still did not accept the anchor, so issuance stopped rather than publish an "
+    "event nobody could verify.",
+    args=("said",),
+    hint="This is a fault in didwebs or its keripy pin, not in your input; report it with the "
+    "registry event's SAID.",
+)
 
 REGISTRY_EVENT_MISSING = ErrorCode(
     "e.input.missing.registry.event.f",

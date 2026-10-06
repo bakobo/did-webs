@@ -215,6 +215,8 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 | `e.feature.unsupported.registry.event.f` | a v2 registry event other than `rip`/`bup` — `upd` is the case: the ACDC spec lists it, WebOfTrust keripy refuses it (decision `0plkq8s8`) |
 | `e.input.missing.alias-acdc.f` | no designated-aliases ACDC in the stream (absence established: we hold and walked the whole stream) |
 | `e.input.missing.delegator.f` | delegated AID but no delegator KEL in the stream |
+| `e.rule.stream.version.f` | keystore side: a v2 registry requested for a controller whose KEL is another protocol version (decision `8686h4tf`) |
+| `e.self.anchor.registry.f` | keystore side: keripy did not commit a v2 registry event after it was anchored — our fault, never the caller's |
 | `e.input.missing.registry.event.f` | the issuer's KEL anchors a v2 registry event the stream omits — completeness, which `vet`/`vetBinds` do not check (decision `3kn6drgf`) |
 | `e.proof.stream.*.f` (leaves per audit source: `sig`, `seal`, `anchor`, `frame`, `disclosure`) | a walked frame not accepted by keripy — attributed via the escrow/accounting audit; for v2, a registry event `regeventing.vet` refuses (`anchor`, `frame`), or a `bup` without a verifiable BlindedStateQuadruples disclosure (`disclosure`, decision `3kn6drgf`) |
 | `e.state.conflict.kel.f` | likely-duplicitous escrow non-empty: the submission forks its own KEL |
