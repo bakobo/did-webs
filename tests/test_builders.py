@@ -490,6 +490,7 @@ def test_the_knob_registry_covers_every_name_the_brief_names():
     assert set(builders.KNOBS) == {
         "omitted_revocation",
         "unpublished_second_credential",
+        "unanchoring_seal_data",
         "base",
         "two_registries",
         "without_acdc",

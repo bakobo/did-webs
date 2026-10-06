@@ -1355,3 +1355,34 @@ def test_a_controllers_unpublished_credentials_do_not_block_its_publication(tmp_
 
     with ingest.ingest(stream, claimed(facts)) as verified:
         assert verified.acdc.said == facts["acdc_said"]
+
+
+def test_seal_shaped_data_v1_cannot_anchor_does_not_block_publication(tmp_path):
+    """keripy's v1 verifyAnchor needs the event's one seal to be a full {i, s, d}; data missing
+    ``s`` anchors nothing, so it is not an omitted event (hostile pass on #12)."""
+    stream, facts = fixture("unanchoring_seal_data", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert verified.acdc.said == facts["acdc_said"]
+
+
+def test_the_completeness_check_reads_the_kel_once_however_many_logs(tmp_path, monkeypatch):
+    """Rescanning the KEL per presented log made the check quadratic in a stream far below the
+    byte bound (hostile pass on #12: 200 logs, 8 s)."""
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    many = walked.frames + tuple(
+        walked.frames[-2].replace(principal=f"E{n:043d}") for n in range(50)
+    )
+    with loaded(stream) as scratch:
+        calls = []
+        real = scratch.hby.db.clonePreIter
+
+        def counting(*args, **kwargs):
+            calls.append(kwargs.get("pre"))
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(scratch.hby.db, "clonePreIter", counting)
+        ingest.require_complete_v1(scratch, claimed(facts), ingest.Walk(many, None))
+
+    assert calls == [facts["aid"]]

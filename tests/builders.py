@@ -307,6 +307,30 @@ def unpublished_second_credential(tmp_path) -> Fixture:
         )
 
 
+def unanchoring_seal_data(tmp_path) -> Fixture:
+    """A valid publication whose KEL also carries interaction data shaped like a seal of the
+    published registry but missing ``s`` -- which keripy's v1 ``verifyAnchor`` never accepts as
+    an anchor, so it must not be read as one (``4f74sjd8``)."""
+    with keri_api.scratch("unanchoring", tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        ids = keri_api.designated_ids(hab.pre)
+        issued = _issue(hab, regery, ids)
+        hab.interact(
+            data=[{"i": issued.registry.regk, "d": issued.creder.said}], version=keri_api.V1
+        )
+        return Fixture(
+            keri_api.publication_stream(hab, regery, issued.creder),
+            _facts(
+                "unanchoring_seal_data",
+                hab.pre,
+                acdc_said=issued.creder.said,
+                regk=issued.registry.regk,
+                ids=ids,
+                kel_sn=hab.kever.sner.num,
+            ),
+        )
+
+
 # ------------------------------------------------------------------------ wrong authorization
 
 
@@ -904,4 +928,5 @@ KNOBS = {
     "endpoints": endpoints,
     "omitted_revocation": omitted_revocation,
     "unpublished_second_credential": unpublished_second_credential,
+    "unanchoring_seal_data": unanchoring_seal_data,
 }

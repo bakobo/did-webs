@@ -861,27 +861,50 @@ def _candidate_digest(seal, regid: str) -> str | None:
     return None
 
 
-def _anchored_registry_events(scratch: Scratch, issuer: str, regid: str) -> set[str]:
-    """Every digest in ``issuer``'s accepted KEL that could anchor an event of the transaction
-    log ``regid``, read under the stream's own version.
+def _kel_seals(scratch: Scratch, issuer: str) -> list[list]:
+    """The seal list of every event in ``issuer``'s accepted KEL, read once.
 
-    The two versions match anchors differently, and this follows each. v2's verifier matches by
-    digest alone (:func:`_candidate_digest`, decision ``3kn6drgf``). v1's Tevery accepts only an
-    interaction whose one seal is the full ``{i, s, d}`` of the event (``vdr/eventing.py``,
-    ``verifyAnchor``), so for v1 only a seal whose ``i`` is the log counts (``4f74sjd8``).
+    Completeness asks the same KEL about many transaction logs; reading it per log made the
+    check quadratic in a stream far below the byte bound (hostile pass on PR #12).
     """
-    found = set()
+    out = []
     for msg in scratch.hby.db.clonePreIter(pre=issuer, fn=0, gvrsn=scratch.version):
         seals = serdering.SerderKERI(raw=bytes(msg)).sad.get("a") or []
-        for seal in seals if isinstance(seals, list) else []:
-            if scratch.version == V2:
-                digest = _candidate_digest(seal, regid)
-            elif isinstance(seal, dict) and seal.get("i") == regid:
-                digest = seal.get("d") if isinstance(seal.get("d"), str) else None
-            else:
-                digest = None
-            if digest is not None:
-                found.add(digest)
+        out.append(seals if isinstance(seals, list) else [])
+    return out
+
+
+def _v1_anchor(seals: list) -> tuple[str, str] | None:
+    """``(log, digest)`` when an event's seals can anchor a v1 transaction event, else None.
+
+    keripy's v1 ``Tever.verifyAnchor`` accepts only an event whose ``a`` holds exactly one seal,
+    a full ``{i, s, d}`` (``vdr/eventing.py``); anything else anchors nothing (``4f74sjd8``).
+    """
+    if len(seals) != 1 or not isinstance(seals[0], dict):
+        return None
+    seal = seals[0]
+    if all(isinstance(seal.get(key), str) for key in ("i", "s", "d")):
+        return seal["i"], seal["d"]
+    return None
+
+
+def _anchored_registry_events(kel_seals: list[list], version, regid: str) -> set[str]:
+    """Every digest in a KEL's seals that could anchor an event of the transaction log ``regid``.
+
+    The two versions match anchors differently, and this follows each. v2's verifier matches by
+    digest alone (:func:`_candidate_digest`, decision ``3kn6drgf``); v1's accepts only an event's
+    single full seal (:func:`_v1_anchor`, ``4f74sjd8``).
+    """
+    found = set()
+    for seals in kel_seals:
+        if version == V2:
+            found.update(
+                digest
+                for digest in (_candidate_digest(seal, regid) for seal in seals)
+                if digest is not None
+            )
+        elif (anchor := _v1_anchor(seals)) is not None and anchor[0] == regid:
+            found.add(anchor[1])
     return found
 
 
@@ -914,6 +937,7 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
     occurrences = _disclosures(walked)
     disclosures = {blinder.said: blinder for blinder in occurrences}  # lookup only
     schemer = schemaing.load_designated_aliases_schema_v2()
+    kels: dict[str, list[list]] = {}  # each issuer's KEL seals, read once
 
     for rip in (frame for frame in tels if frame.ilk == REGISTRY_V2_INCEPTION):
         updates = sorted(
@@ -944,7 +968,10 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
         presented = {rip.said, *(update.said for update in updates)}
         # Every frame the stream carries can explain a digest-only seal, not only this registry's.
         carried = {frame.said for frame in walked.frames}
-        missing = _anchored_registry_events(scratch, record.issuer, rip.said) - presented - carried
+        if record.issuer not in kels:
+            kels[record.issuer] = _kel_seals(scratch, record.issuer)
+        anchored = _anchored_registry_events(kels[record.issuer], V2, rip.said)
+        missing = anchored - presented - carried
         if missing:
             raise errors.REGISTRY_EVENT_MISSING(
                 aid=record.issuer, regid=rip.said, said=min(missing)
@@ -993,8 +1020,9 @@ def require_complete_v1(scratch: Scratch, did, walked: Walk) -> None:
         BakoboError: ``e.input.missing.registry.event.f``, naming the first omitted event.
     """
     presented = {frame.said for frame in walked.frames if frame.is_tel}
+    kel_seals = _kel_seals(scratch, did.aid)
     for log in sorted({frame.principal for frame in walked.frames if frame.is_tel}):
-        missing = _anchored_registry_events(scratch, did.aid, log) - presented
+        missing = _anchored_registry_events(kel_seals, V1, log) - presented
         if missing:
             raise errors.REGISTRY_EVENT_MISSING(aid=did.aid, regid=log, said=min(missing))
 
