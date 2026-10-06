@@ -39,7 +39,9 @@ from hio.help import decking
 from keri.app import grouping, habbing
 from keri.core import coring, counting, eventing, serdering
 from keri.db.dbing import fetchTsgs
-from keri.kering import Vrsn_1_0
+from keri.acdc import Registrar, acdcmap
+from keri.core.eventing import messagize
+from keri.kering import Vrsn_1_0, Vrsn_2_0
 from keri.vdr import credentialing, verifying
 from keri.vdr.eventing import (
     Reger,  # `viring.Reger` in the reference; merged into vdr.eventing on this line
@@ -49,6 +51,10 @@ from didwebs import errors, schemaing
 
 #: The protocol version every event this module constructs carries. Never omit it.
 V1 = Vrsn_1_0
+
+#: The protocol and genus version of a v2 publication (decision ``0plkq8s8``). The v1 path never
+#: sees it; the v2 path passes it at every call site exactly as the v1 path passes V1.
+V2 = Vrsn_2_0
 
 #: Designation timestamp. Fixed, not wall-clock, so a fixture's ACDC SAID is stable across runs.
 DESIGNATION_DT = "2025-07-24T16:21:40.802473+00:00"
@@ -209,6 +215,144 @@ def issue_aliases(
         machinery.drain()
 
     return Issued(registry, creder, iss_serder, iss_anchor)
+
+
+# ------------------------------------------------ the keystore side, KERI protocol v2
+
+
+@dataclass(frozen=True)
+class IssuedV2:
+    """A v2 designation and its registry history, with the disclosure for every update.
+
+    ``bups`` and ``blinders`` run in step: ``blinders[n]`` is the blinded state ``bups[n]`` commits
+    to. keripy persists no blinder, so this record is the only place the disclosures live until
+    they are published (decision ``3kn6drgf``).
+    """
+
+    registry: object  # keri.acdc.registraring.Registry
+    rip: serdering.SerderACDC
+    acdc: serdering.SerderACDC
+    bups: tuple[serdering.SerderACDC, ...]
+    blinders: tuple[object, ...]  # keri.core.Blinder
+
+    @property
+    def bup(self) -> serdering.SerderACDC:
+        """The registry's head update."""
+        return self.bups[-1]
+
+    @property
+    def blinder(self):
+        """The head update's disclosure."""
+        return self.blinders[-1]
+
+
+def _require_v2(hab: habbing.Hab) -> None:
+    """Refuse a v1 controller: one stream is one version (decision ``8686h4tf``)."""
+    if hab.kever.serder.pvrsn != V2:
+        raise ValueError(
+            f"{hab.pre} keeps a protocol {hab.kever.serder.pvrsn.major} key event log; a v2 "
+            "registry must be anchored in a protocol v2 one"
+        )
+
+
+def _anchor_v2(hab: habbing.Hab, registry, serder) -> None:
+    """Seal one v2 registry event into ``hab``'s KEL and record the anchor with the registry."""
+    seal = {"i": registry.regk, "s": serder.sad["n"], "d": serder.said}
+    hab.interact(data=[seal], version=V2, gvrsn=V2)
+    if not registry.anchorMsg(serder.said):
+        raise RuntimeError(f"keripy did not commit registry event {serder.said} after anchoring")
+
+
+def issue_aliases_v2(
+    hab: habbing.Hab,
+    rgy,
+    ids: list[str],
+    *,
+    dt: str = DESIGNATION_DT,
+    regname: str = DEFAULT_REGISTRY_NAME,
+    uuid: str | None = None,
+    salt: str | None = None,
+    stamp: str | None = None,
+) -> IssuedV2:
+    """Issue ``hab``'s self-attested v2 designated-aliases ACDC listing ``ids``.
+
+    Incepts a registry (``rip``) and anchors it, builds the ``acm`` against the proposed v2
+    schema with ``rd`` naming that registry, then records it ``issued`` with a blindable update
+    (``bup``) and anchors that too. ``upd`` is never used: WebOfTrust keripy refuses it
+    (decision ``0plkq8s8``).
+
+    Args:
+        hab: the controller, whose KEL must be protocol v2.
+        rgy: a ``keri.acdc.Regery`` bound to ``hab``'s Habery.
+        ids: the DIDs to designate, verbatim, in order.
+        dt: designation timestamp inside the credential.
+        regname: registry name, unique within ``rgy``.
+        uuid: the registry's nonce; random when None.
+        salt: the blinding salt each update's UUID is derived from; random when None. It is
+            never published, only the per-update disclosures are.
+        stamp: the registry events' own timestamps; now when None.
+    """
+    _require_v2(hab)
+    registrar = Registrar(rgy=rgy)
+    registry = registrar.makeRegistry(name=regname, prefix=hab.pre, uuid=uuid, stamp=stamp)
+    rip = rgy.store.event(registry.regk)
+    _anchor_v2(hab, registry, rip)
+
+    acdc = acdcmap(
+        israid=hab.pre,
+        regid=registry.regk,
+        schema=schemaing.DES_ALIASES_SCHEMA_V2_SAID,
+        attribute={"d": "", "dt": dt, "ids": list(ids)},
+        rule=schemaing.read_designated_aliases_rules(),
+        uuid="",
+        pvrsn=V2,
+        gvrsn=V2,
+    )
+    schemaing.load_designated_aliases_schema_v2().verify(acdc.raw)  # raises on a mismatch
+
+    blinder, bup = registrar.issue(registry, acdc=acdc, state="issued", salt=salt, stamp=stamp)
+    _anchor_v2(hab, registry, bup)
+    return IssuedV2(registry, rip, acdc, (bup,), (blinder,))
+
+
+def revoke_aliases_v2(
+    hab: habbing.Hab, rgy, issued: IssuedV2, *, salt: str | None = None, stamp: str | None = None
+) -> IssuedV2:
+    """Record ``issued``'s designation as ``revoked`` with a further anchored ``bup``."""
+    _require_v2(hab)
+    blinder, bup = Registrar(rgy=rgy).issue(
+        issued.registry, acdc=issued.acdc, state="revoked", salt=salt, stamp=stamp
+    )
+    _anchor_v2(hab, issued.registry, bup)
+    return IssuedV2(
+        issued.registry,
+        issued.rip,
+        issued.acdc,
+        (*issued.bups, bup),
+        (*issued.blinders, blinder),
+    )
+
+
+def registry_v2_bytes(rip, bups, blinders) -> bytes:
+    """A v2 registry as published: the ``rip``, then every ``bup`` with its ``-a`` disclosure."""
+    msgs = bytearray(rip.raw)
+    for bup, blinder in zip(bups, blinders, strict=True):
+        msgs.extend(messagize(bup, bonds=[blinder.data], framed=False, gvrsn=V2))
+    return bytes(msgs)
+
+
+def keystore_stream_v2(hab: habbing.Hab, issued: IssuedV2) -> bytes:
+    """A v2 publication stream assembled from a keystore *we* control.
+
+    Genus-version counter, the KEL, the ACDC, then the registry. The ACDC precedes its registry
+    for a mechanical reason: it carries no attachment, and keripy's extractor cannot finish an
+    attachment-less final frame, so an attached ``bup`` goes last.
+    """
+    msgs = bytearray(counting.Counter.makeGVC(version=V2))
+    msgs.extend(hab.replay(pre=hab.pre, gvrsn=V2))
+    msgs.extend(issued.acdc.raw)
+    msgs.extend(registry_v2_bytes(issued.rip, issued.bups, issued.blinders))
+    return bytes(msgs)
 
 
 # --------------------------------------------------- the ingest side: the hosted keri.cesr

@@ -41,8 +41,9 @@ from keri.app.habbing import openHby
 from keri.core import coring, serdering
 from keri.core.parsing import Parser
 from keri.db import dbing
-from keri.kering import Vrsn_1_0
+from keri.kering import Vrsn_1_0, Vrsn_2_0
 from keri.vdr import credentialing
+from keri import acdc as acdcing
 
 from didwebs import assemble
 
@@ -180,6 +181,50 @@ def scratch(name: str, tmp_path, *, salt_raw: bytes = CONTROLLER_SALT):
     finally:
         for root in roots:
             shutil.rmtree(root, ignore_errors=True)
+
+
+@contextmanager
+def scratch_v2(name: str, tmp_path, *, salt_raw: bytes = CONTROLLER_SALT):
+    """Yield ``(hby, rgy)`` for protocol v2: a Habery and a v2 (``keri.acdc``) registry store.
+
+    The v2 registry is a different database from the vdr ``Regery`` :func:`scratch` opens, so its
+    temporary root is collected and removed the same way (constraint ``l7ws7hdt``).
+    """
+    roots: tuple[str, ...] = ()
+    try:
+        with open_keystore(name, tmp_path, salt_raw=salt_raw) as hby:
+            rgy = acdcing.Regery(hby=hby, name=hby.name, base=hby.base, temp=True)
+            roots = tuple(
+                dict.fromkeys(_temp_root(store) for store in (hby.ks, hby.db, hby.cf, rgy.baser))
+            )
+            try:
+                yield hby, rgy
+            finally:
+                rgy.close()
+    finally:
+        for root in roots:
+            shutil.rmtree(root, ignore_errors=True)
+
+
+def make_hab_v2(hby: habbing.Habery, name: str, **kwa) -> habbing.Hab:
+    """Make a Hab with protocol v2 pinned, the v2 counterpart of :func:`make_hab`."""
+    params = {"icount": 1, "isith": "1", "ncount": 1, "nsith": "1", "transferable": True}
+    params.update(kwa)
+    return hby.makeHab(name=name, version=V2, **params)
+
+
+#: Fixed blinding salt for v2 fixtures: keripy derives each bup's UUID from it, so without it the
+#: blinded-state SAIDs -- and every bup that commits to one -- would change on every run.
+BLIND_SALT = core.Salter(raw=b"didwebs-blinding").qb64
+
+#: Fixed nonce for a v2 registry's inception, so its SAID -- the ``rd`` every ACDC and update
+#: names -- is the same on every run.
+REGISTRY_UUID = coring.Noncer(raw=b"didwebs-v2-registry-uuid-fixture").qb64
+
+#: Fixed timestamp for the v2 registry events, for the same reason.
+REGISTRY_STAMP = "2026-10-06T00:00:00.000000+00:00"
+
+V2 = Vrsn_2_0
 
 
 def make_hab(hby: habbing.Habery, name: str, **kwa) -> habbing.Hab:
