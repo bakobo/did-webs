@@ -120,3 +120,9 @@ def test_a_delegated_v2_publication_hosts_its_delegators_kel_first(tmp_path):
     kel = [m.serder for m in _messages(emitted) if m.serder.ilk in ("icp", "dip", "ixn")]
     assert kel[0].ilk == "icp" and kel[0].pre == facts["delegator_aid"]
     assert any(serder.ilk == "dip" and serder.pre == facts["aid"] for serder in kel)
+
+
+def test_a_rotated_v2_aid_publishes_its_current_key(tmp_path):
+    _, facts, doc, _ = _emitted("rotated", tmp_path)
+
+    assert [m["publicKeyJwk"]["kid"] for m in doc["verificationMethod"]] == [facts["current_key"]]

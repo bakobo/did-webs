@@ -400,6 +400,31 @@ def endpoints(tmp_path) -> builders.Fixture:
         )
 
 
+def rotated(tmp_path) -> builders.Fixture:
+    """A valid publication whose controller rotated after issuing: the document must name the
+    post-rotation key."""
+    with keri_api.scratch_v2("rotated", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        hab.rotate(version=V2, gvrsn=V2)
+        return builders.Fixture(
+            assemble.keystore_stream_v2(hab, issued),
+            _facts("rotated", hab, issued, current_key=hab.kever.verfers[0].qb64),
+        )
+
+
+def forked_kel(tmp_path) -> builders.Fixture:
+    """One v2 AID, two valid interaction events at one sequence number, both submitted: two
+    keystores share a salt, incept the same AID, and extend it differently."""
+    with keri_api.scratch_v2("branch", tmp_path / "branch") as (bhby, _):
+        branch_hab = keri_api.make_hab_v2(bhby, "controller")
+        branch_hab.interact(data=[{"d": "a divergent branch"}], version=V2)
+        branch = next(branch_hab.db.clonePreIter(pre=branch_hab.pre, fn=1, gvrsn=V2))
+    fixture = base(tmp_path / "trunk")
+    assert branch_hab.pre == fixture.facts["aid"], "the fork must be the same AID"
+    facts = {**fixture.facts, "knob": "forked_kel", "expected_code": "e.state.conflict.kel.f"}
+    return builders.Fixture(fixture.stream + bytes(branch), facts)
+
+
 def trailing_v1_body(tmp_path) -> builders.Fixture:
     """A valid v2 publication followed by one whole, attachment-less v1 credential body: the
     final-frame reader can read it, and refuses it for its version."""
@@ -449,8 +474,12 @@ KNOBS = {
     "delegated": delegated,
     "delegated:no-delegator": delegated_without_delegator,
     "endpoints": endpoints,
+    "rotated": rotated,
+    "forked_kel": forked_kel,
 }
 
 #: Knobs whose stream must be refused, and the exact code each must earn.
-POSITIVE = ("base", "genus_per_artifact", "spare_registry", "delegated", "endpoints")
+POSITIVE = (
+    "base", "genus_per_artifact", "spare_registry", "delegated", "endpoints", "rotated",
+)
 NEGATIVE = tuple(name for name in KNOBS if name not in POSITIVE)
