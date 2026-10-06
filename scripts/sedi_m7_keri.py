@@ -12,7 +12,6 @@ import argparse
 from pathlib import Path
 
 from bakobo.errors import ErrorCode
-from keri.app import signing
 from keri.app.habbing import openHby
 from keri.kering import Vrsn_1_0
 from keri.recording import LocationRecord
@@ -20,7 +19,7 @@ from keri.vdr.credentialing import Regery
 from keri.vdr.eventing import Reger
 
 from didwebs import schemaing
-from didwebs.assemble import issue_aliases
+from didwebs.assemble import issue_aliases, serialize_v1
 from didwebs.did import parse as parse_did
 
 WITNESS_OOBI_MISSING = ErrorCode(
@@ -127,10 +126,10 @@ def export(name: str, base: str, path: Path) -> str:
             for msg in hby.db.clonePreIter(pre=hab.pre, gvrsn=Vrsn_1_0):
                 stream.extend(msg)
             for pre in (creder.regid, creder.said):
-                for msg in regery.reger.clonePreIter(pre=pre):
+                for msg in regery.reger.clonePreIter(pre=pre, gvrsn=Vrsn_1_0):
                     stream.extend(msg)
             prefixer, seqner, saider = regery.reger.cancs.get(keys=(creder.said,))
-            stream.extend(signing.serialize(creder, prefixer, seqner, saider))
+            stream.extend(serialize_v1(creder, prefixer, seqner, saider))
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(stream)
             return hab.pre

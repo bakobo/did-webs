@@ -12,9 +12,10 @@ passthrough), `gvimca`+`qbqfst` (estate keripy, protocol v1 pinned). Requirement
 ## Shape
 
 One Python package, `didwebs`, src layout, with a `didwebs` console script. Python ≥3.14. The
-`keri` dependency is the estate pin — `bakobo/keripy@366d810`, same commit `witness` and `heti`
-pin — with protocol v1 passed explicitly at every event-constructing and replay call site
-(constraint `qbqfst`). Two API notes from the spike that differ from the GLEIF reference code:
+`keri` dependency is `bakobo/keripy@6f95d314`, the commit `heti` pins (decision `66g4hfd2`),
+with protocol v1 passed explicitly at every event-constructing and replay call site (constraint
+`qbqfst`). The ACDC's v1 source-seal triple is built by `assemble.serialize_v1`, because
+keripy's `signing.serialize` derives its genus from the global default from that commit on. Two API notes from the spike that differ from the GLEIF reference code:
 `SerderACDC.regi` is renamed `.regid` on this line, and the GLEIF resolver requires Python
 <3.14, so interop tests drive it in its own venv, never in-process.
 
@@ -48,8 +49,9 @@ the pin** (tick `~3v45`). `escrowLDEvent` calls `db.addLde`, which `Baser` never
 `AttributeError` is swallowed inside event processing (logged, misleadingly, as "No kevery to
 process so dropped msg"), so a forked event is dropped silently rather than escrowed. The
 escrow audit therefore unions the `ldes` read — correct the moment keripy repairs it — with a
-same-sequence-number conflict scan of the accepted KEL, which is what actually fires today.
-The fork oracle asserts the conflict is detected either way.
+same-sequence-number conflict scan of the accepted KEL, which was the only thing that fired
+until the pin moved to 6f95d314, where the escrow is live again. Both legs are kept; the fork
+oracle asserts the conflict is detected either way.
 
 That scan asks the first-seen log first (decision `vo6rnxve`). Two events at one sequence number
 are two situations, and only keripy's own acceptance rules tell them apart: the losing branch of
