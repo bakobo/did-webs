@@ -74,7 +74,19 @@ jobs:
       - name: Provision the GLEIF resolver venv (Python 3.13, cached above on a hit)
         run: nice -n 19 uv run python tests/crossimpl/resolver_venv.py provision
 
-      - name: Run the cross-implementation oracle (never skips)
+      # The KERI v2 oracle (decision 0plkq8s8): every v2 stream didwebs emits must verify under
+      # stock WebOfTrust keripy main, not only under this project's fork pin. Its own venv, pinned
+      # in tests/upstream/keripy_venv.py, cached the same way and for the same reason.
+      - name: Cache the upstream keripy venv
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: tests/upstream/.venv
+          key: upstream-keripy-venv-${{ runner.os }}-${{ hashFiles('tests/upstream/keripy_venv.py') }}
+
+      - name: Provision the upstream keripy venv (Python 3.14, cached above on a hit)
+        run: nice -n 19 uv run python tests/upstream/keripy_venv.py provision
+
+      - name: Run the cross-implementation oracles (never skip)
         env:
           DIDWEBS_CROSSIMPL: required
-        run: nice -n 19 uv run pytest tests/test_crossimpl.py --no-cov -q
+        run: nice -n 19 uv run pytest tests/test_crossimpl.py tests/test_upstream_v2.py --no-cov -q
