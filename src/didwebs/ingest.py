@@ -40,11 +40,13 @@ from dataclasses import dataclass, field, replace
 from typing import Self
 
 from bakobo.errors import BakoboError
+from keri import kering
+from keri.acdc import regeventing
 from keri.app import habbing
+from keri.core import Blinder, BlindState, counting, routing, serdering
 from keri.core import eventing as keventing
-from keri.core import routing, serdering
 from keri.core.parsing import Parser
-from keri.kering import Kinds, Vrsn_1_0
+from keri.kering import Kinds, ShortageError, Vrsn_1_0, Vrsn_2_0
 from keri.peer import exchanging
 from keri.vdr import credentialing, verifying
 from keri.vdr import eventing as teventing
@@ -76,11 +78,20 @@ __all__ = [
     "require_no_third_party",
     "require_ownership",
     "require_supported",
+    "stream_version",
+    "vet_registries",
     "walk",
 ]
 
-#: The CESR genus version every parser in this module is pinned to (constraint ``qbqfst``).
+#: The CESR genus version every v1 parser in this module is pinned to (constraint ``qbqfst``).
 V1 = Vrsn_1_0
+
+#: The protocol and genus version of a v2 publication (decision ``0plkq8s8``). A stream is read
+#: under exactly one of V1 and V2, chosen by :func:`stream_version` (decision ``8686h4tf``).
+V2 = Vrsn_2_0
+
+#: The genus-version counter a v2 publication stream opens with.
+GENUS_V2 = bytes(counting.Counter.makeGVC(version=V2))
 
 #: The only serialization didwebs accepts — narrower than "v1" on purpose (SKP-F5).
 ACCEPTED_KIND = Kinds.json
@@ -98,6 +109,17 @@ TEL_ILKS = frozenset({"vcp", "vrt", "iss", "rev", "bis", "brv"})
 
 #: Registry inception. Its ``ii`` field names the AID whose KEL must anchor the registry.
 REGISTRY_INCEPTION = "vcp"
+
+#: A v2 registry's inception and its blindable update: ACDC-protocol messages, the only registry
+#: events a v2 publication may carry (decision ``3kn6drgf``). A rip's ``i`` names its issuer.
+REGISTRY_V2_INCEPTION = "rip"
+REGISTRY_V2_UPDATE = "bup"
+REGISTRY_V2_ILKS = frozenset({REGISTRY_V2_INCEPTION, REGISTRY_V2_UPDATE})
+
+#: v2 registry events this build recognizes and refuses. ``upd`` is in the ACDC spec's table and
+#: not in WebOfTrust keripy's (decision ``0plkq8s8``); recognizing it is what lets the refusal
+#: name it instead of reporting an unplaceable frame.
+REGISTRY_V2_REFUSED = frozenset({"upd"})
 
 #: A signed assertion about somebody's key state, endpoints or credentials.
 REPLY = "rpy"
@@ -129,6 +151,7 @@ class Frame:
     schema: str | None = None
     serder: object = None
     sigers: tuple = ()
+    disclosures: tuple = ()
 
     def replace(self, **changes) -> Frame:
         """A copy with ``changes`` applied — the dataclass helper, exposed for audit tests."""
@@ -141,13 +164,19 @@ class Frame:
 
     @property
     def is_tel(self) -> bool:
-        """A transaction event: its principal is a registry or a credential identifier."""
-        return self.proto == KERI and self.ilk in TEL_ILKS
+        """A transaction event: its principal is a registry or a credential identifier.
+
+        In v1 these are KERI-protocol messages; in v2 they are ACDC-protocol registry events,
+        whose principal is always the registry.
+        """
+        if self.proto == KERI:
+            return self.ilk in TEL_ILKS
+        return self.proto == ACDC and self.ilk in REGISTRY_V2_ILKS | REGISTRY_V2_REFUSED
 
     @property
     def is_acdc(self) -> bool:
         """A credential: its principal is its issuer."""
-        return self.proto == ACDC
+        return self.proto == ACDC and not self.is_tel
 
 
 @dataclass(frozen=True)
@@ -171,9 +200,10 @@ class Walk:
 
     frames: tuple[Frame, ...]
     failure: WalkFailure | None
+    version: object = V1
 
 
-def _frame(serder, sigers) -> Frame:
+def _frame(serder, sigers, disclosures=()) -> Frame:
     """Describe one extracted message.
 
     The *principal* is whom the frame is about, which differs by message class: a key event is
@@ -181,10 +211,24 @@ def _frame(serder, sigers) -> Frame:
     about its issuer (``SerderACDC.israid``). The third-party sweep and the accounting audit both
     index on this, so it is computed once, here.
     """
+    if serder.proto == ACDC and serder.ilk in REGISTRY_V2_ILKS | REGISTRY_V2_REFUSED:
+        regid = serder.said if serder.ilk == REGISTRY_V2_INCEPTION else serder.sad.get("rd")
+        return Frame(
+            said=serder.said,
+            ilk=serder.ilk,
+            proto=ACDC,
+            kind=serder.kind,
+            major=serder.pvrsn.major,
+            principal=regid,
+            sn=int(serder.sad.get("n", "0"), 16),
+            regid=regid,
+            serder=serder,
+            disclosures=tuple(disclosures),
+        )
     if serder.proto == ACDC:
         return Frame(
             said=serder.said,
-            ilk=None,
+            ilk=serder.ilk,
             proto=ACDC,
             kind=serder.kind,
             major=serder.pvrsn.major,
@@ -228,8 +272,40 @@ def _classify(residue: bytes) -> WalkFailure:
     return WalkFailure(fault="format")
 
 
+def stream_version(stream: bytes):
+    """The protocol version ``stream`` is read under: V2 when it opens with the v2 genus-version
+    counter, V1 otherwise (decision ``8686h4tf``).
+
+    A v2 stream announces itself, so nothing outside the bytes chooses. A stream with no counter
+    is read as v1 because that is what every deployed publication is; a v2 body inside it then
+    fails the walk or the version gate as a format fault, never silently.
+    """
+    return V2 if stream.startswith(GENUS_V2) else V1
+
+
+def _final_frame(residue: bytes):
+    """A v2 frame with no attachment at the very end of the stream, or None.
+
+    keripy's extractor reads a body, then peeks for an attachment group and raises
+    ``ShortageError`` at end of stream, so an unattached last frame can never be extracted.
+    v2 registry events and credentials routinely carry no attachment, so the residue is read as
+    one whole body instead, and accepted only when it is exactly one.
+    """
+    body = residue.removeprefix(GENUS_V2)
+    try:
+        # An ACDC's SAID is computed over its most compact form, which only SerderACDC knows.
+        klas = serdering.SerderACDC if kering.smell(body).proto == ACDC else serdering.SerderKERI
+        serder = klas(raw=body)
+    except Exception:  # noqa: BLE001 — any read failure means "not one whole frame"
+        return None
+    if serder.size != len(body) or serder.pvrsn.major != V2.major:
+        return None
+    return serder
+
+
 def walk(stream: bytes) -> Walk:
-    """Extract every frame of ``stream``, one message at a time, with the CESR genus pinned to v1.
+    """Extract every frame of ``stream``, one message at a time, with the CESR genus pinned to
+    the stream's own version (:func:`stream_version`).
 
     This is step 1 of the audit — the pipeline's own account of what it was asked to publish,
     taken *before* keripy sees the stream, so that a frame keripy would silently drop is visible
@@ -239,22 +315,33 @@ def walk(stream: bytes) -> Walk:
     than through ``Parser.parse``, because ``parse`` swallows the accumulated result when a later
     frame fails to extract: the frames that *did* walk are exactly what attribution needs.
     """
-    parser = Parser(framed=True, version=V1)
+    version = stream_version(stream)
+    parser = Parser(framed=True, version=version)
     ims = bytearray(stream)
     frames: list[Frame] = []
     failure = None
     while ims:
         residue = bytes(ims)
-        extractor = parser.msgParsator(ims=ims, framed=True, local=False, version=V1)
+        extractor = parser.msgParsator(ims=ims, framed=True, local=False, version=version)
         try:
             while True:
                 next(extractor)
         except StopIteration as done:
-            frames.append(_frame(done.value.serder, done.value.sigers))
+            # A genus-version counter mid-stream is consumed with the message after it, so every
+            # completed extraction yields a message (the genus_per_artifact fixture holds this).
+            message = done.value
+            frames.append(_frame(message.serder, message.sigers, message.bsqs))
+        except ShortageError:
+            last = _final_frame(residue) if version == V2 else None
+            if last is None:
+                failure = _classify(residue)
+            else:
+                frames.append(_frame(last, ()))
+            break
         except Exception:  # noqa: BLE001 — keripy raises many extraction error types
             failure = _classify(residue)
             break
-    return Walk(tuple(frames), failure)
+    return Walk(tuple(frames), failure, version)
 
 
 def require_supported(did, walked: Walk) -> None:
@@ -270,7 +357,7 @@ def require_supported(did, walked: Walk) -> None:
     faults += [
         WalkFailure(fault="format")
         for frame in walked.frames
-        if frame.major != V1.major
+        if frame.major != walked.version.major
     ]
     faults += [
         WalkFailure(fault="serialization", kind=frame.kind)
@@ -285,6 +372,9 @@ def require_supported(did, walked: Walk) -> None:
             raise errors.STREAM_UNWALKABLE(did=did.compose())
     for fault in faults:
         raise errors.SERIALIZATION_UNSUPPORTED(did=did.compose(), kind=fault.kind)
+    for frame in walked.frames:
+        if frame.proto == ACDC and frame.ilk in REGISTRY_V2_REFUSED:
+            raise errors.REGISTRY_EVENT_UNSUPPORTED(frame=frame.said, ilk=frame.ilk)
 
 
 # ---------------------------------------------------------------- the scratch keripy state
@@ -337,8 +427,14 @@ class Scratch:
     revery: routing.Revery
     exchanger: exchanging.Exchanger
     roots: tuple[str, ...]
+    version: object = V1
     passes: int = 0
     closed: bool = field(default=False)
+    #: v2 only: each vetted registry by its SAID (decision ``3kn6drgf``), and the SAIDs of the
+    #: registry events and credentials that vetting accepted. keripy never processes these
+    #: frames, so this is what "accepted" means for them.
+    registries: dict = field(default_factory=dict)
+    vetted: set = field(default_factory=set)
 
     def load(self, stream: bytes) -> None:
         """Parse ``stream`` into the scratch databases and drain every escrow to a fixpoint.
@@ -359,7 +455,7 @@ class Scratch:
             rvy=self.revery,
             exc=self.exchanger,
             local=False,
-            version=V1,
+            version=self.version,
         )
         seen = None
         while True:
@@ -398,12 +494,12 @@ class Scratch:
         self.close()
 
 
-def open_scratch() -> Scratch:
-    """Build a fresh scratch stack in its own temporary databases."""
+def open_scratch(version=V1) -> Scratch:
+    """Build a fresh scratch stack in its own temporary databases, pinned to ``version``."""
     # Two further parsers are built indirectly and do not show up in a grep of this module:
     # ``Habery`` constructs ``hby.psr`` from its ``version``, and ``Regery`` constructs its own
-    # from ``hby.version``. Passing V1 here is what pins both (constraint qbqfst).
-    hby = habbing.Habery(name="didwebs-ingest", base="", temp=True, version=V1)
+    # from ``hby.version``. Passing the version here is what pins both (constraint qbqfst).
+    hby = habbing.Habery(name="didwebs-ingest", base="", temp=True, version=version)
     regery = credentialing.Regery(hby=hby, name="didwebs-ingest", base="", temp=True)
     schemaing.pin_designated_aliases_schema(hby)
 
@@ -422,7 +518,7 @@ def open_scratch() -> Scratch:
             for store in (hby.ks, hby.db, hby.cf, regery.reger)
         )
     )
-    return Scratch(hby, regery, kevery, tevery, verifier, revery, exchanger, roots)
+    return Scratch(hby, regery, kevery, tevery, verifier, revery, exchanger, roots, version)
 
 
 def _on_escrow(store_of, name):
@@ -548,7 +644,16 @@ def require_no_third_party(did, walked: Walk) -> None:
         for frame in walked.frames
         if frame.ilk == REGISTRY_INCEPTION
     }
-    registries = {frame.principal for frame in walked.frames if frame.ilk == REGISTRY_INCEPTION}
+    aids |= {
+        frame.serder.sad["i"]
+        for frame in walked.frames
+        if frame.proto == ACDC and frame.ilk == REGISTRY_V2_INCEPTION
+    }
+    registries = {
+        frame.principal
+        for frame in walked.frames
+        if frame.ilk in (REGISTRY_INCEPTION, REGISTRY_V2_INCEPTION)
+    }
     credentials = {frame.said for frame in walked.frames if frame.is_acdc}
 
     for frame in walked.frames:
@@ -578,6 +683,8 @@ def accepted(scratch: Scratch, frame: Frame) -> bool:
     """
     if frame.is_kel:
         return scratch.hby.db.fons.get(keys=(frame.principal, frame.said)) is not None
+    if frame.proto == ACDC and scratch.version == V2:
+        return frame.said in scratch.vetted
     if frame.is_tel:
         return scratch.regery.reger.tels.get(keys=frame.principal, on=frame.sn) == frame.said
     if frame.is_acdc:
@@ -672,15 +779,120 @@ def attribute(scratch: Scratch, frame: Frame):
     return errors.STREAM_FRAME_REJECTED(frame=frame.said)
 
 
+@dataclass(frozen=True)
+class VettedRegistry:
+    """A v2 registry as ``regeventing.vet`` verified it, with the disclosure of every update.
+
+    ``record`` is keripy's verdict on the chain. ``updates`` and ``blinders`` run in step and in
+    sequence order; every blinder was checked against the BLID its update commits to.
+    """
+
+    record: object  # keri.acdc.regeventing.RegStateRecord
+    rip: object
+    updates: tuple
+    blinders: tuple
+
+
+#: keripy's registry-chain refusals that are about anchoring in the issuer's KEL.
+_ANCHOR_FAULTS = (kering.MissingAnchorError, kering.MisanchorError, kering.RootSealError)
+
+
+def _disclosure(frame: Frame):
+    """The one blinded-state disclosure a published bup carries, verified against its BLID.
+
+    Raises:
+        BakoboError: ``e.proof.stream.disclosure.f`` for no disclosure, more than one, or
+            one that is not the state the update commits to (decision ``3kn6drgf``).
+    """
+    if len(frame.disclosures) != 1:
+        raise errors.REGISTRY_STATE_UNPROVABLE(frame=frame.said)
+    crew = frame.disclosures[0]
+    blinder = Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in crew))
+    try:
+        regeventing.vetBlind(blinder, blid=frame.serder.sad["b"])
+    except kering.UnverifiedBlindError as fault:
+        raise errors.REGISTRY_STATE_UNPROVABLE(frame=frame.said) from fault
+    return blinder
+
+
+def vet_registries(scratch: Scratch, walked: Walk) -> None:
+    """Verify every v2 registry the stream carries, and record what that verification accepted.
+
+    keripy's Parser refuses every ACDC message with an ilk, so a v2 registry never reaches a
+    Tevery and nothing would ever call it accepted. Instead each registry is handed, with every
+    one of its updates, to ``keri.acdc.regeventing.vet`` — WebOfTrust keripy's own party-side
+    verifier — against the key event log the parser *did* accept. Every update must carry its
+    disclosure (:func:`_disclosure`), the head's is what ``vet`` binds the credential with, and a
+    credential is accepted only when a vetted head binds it mutually and it validates against the
+    v2 designated-aliases schema it names. Anything vetting does not accept stays unaccounted and
+    is attributed by the audit, exactly as an escrowed v1 frame is.
+
+    Raises:
+        BakoboError: ``e.proof.stream.disclosure.f`` for an update without a verifiable
+            disclosure; ``e.proof.stream.anchor.f`` for a registry event its issuer's KEL does
+            not anchor; ``e.proof.stream.frame.f`` for any other chain fault keripy names.
+    """
+    tels = [frame for frame in walked.frames if frame.proto == ACDC and frame.is_tel]
+    credentials = {frame.said: frame for frame in walked.frames if frame.is_acdc}
+    schemer = schemaing.load_designated_aliases_schema_v2()
+
+    for rip in (frame for frame in tels if frame.ilk == REGISTRY_V2_INCEPTION):
+        updates = sorted(
+            (f for f in tels if f.ilk == REGISTRY_V2_UPDATE and f.regid == rip.said),
+            key=lambda f: f.sn,
+        )
+        blinders = [_disclosure(update) for update in updates]
+        head = blinders[-1] if blinders else None
+        bound = credentials.get(head.acdc) if head is not None else None
+        try:
+            record = regeventing.vet(
+                rip.serder,
+                [update.serder for update in updates],
+                db=scratch.hby.db,
+                acdc=bound.serder if bound is not None else None,
+                blinder=head,
+            )
+        except _ANCHOR_FAULTS as fault:
+            raise errors.STREAM_ANCHOR_INVALID(frame=rip.said) from fault
+        except kering.ValidationError as fault:  # the head's disclosure was already vetted
+            raise errors.STREAM_FRAME_REJECTED(frame=rip.said) from fault
+
+        scratch.registries[rip.said] = VettedRegistry(
+            record, rip.serder, tuple(u.serder for u in updates), tuple(blinders)
+        )
+        scratch.vetted.update([rip.said, *(update.said for update in updates)])
+        if bound is not None and record.binding == "mutual" and _schema_valid(schemer, bound):
+            scratch.vetted.add(bound.said)
+
+
+def _schema_valid(schemer, frame: Frame) -> bool:
+    """Whether a v2 credential names the designated-aliases schema and validates against it.
+
+    v1 never asks: keripy's Verifier validates a credential against its schema before saving it.
+    Nothing saves a v2 credential, so the check is ours, and a credential under any other schema
+    is not one this build can accept.
+    """
+    if frame.schema != schemer.said:
+        return False
+    try:
+        return bool(schemer.verify(frame.serder.raw))
+    except kering.ValidationError:
+        return False
+
+
 def audit(scratch: Scratch, did, walked: Walk) -> None:
     """Raise the error the accounting and escrow audits attribute, if the stream earns one.
 
     Precedence is the brief's: the fork verdict outranks the per-frame proof leaves, because a
-    submission that forks its own KEL is not a stream with one bad frame in it.
+    submission that forks its own KEL is not a stream with one bad frame in it. A v2 registry is
+    vetted after the fork verdict and before accounting, since vetting is what makes its frames
+    accountable at all.
     """
     conflicts = duplicitous(scratch, walked)
     if conflicts:
         raise errors.KEL_FORKED(aid=did.aid)
+    if walked.version == V2:
+        vet_registries(scratch, walked)
     for frame in account_frames(scratch, walked):
         raise attribute(scratch, frame)
 
@@ -746,6 +958,41 @@ def _covers(did, creder) -> bool:
     return (_DID_WEBS, did) in designated and (_DID_WEB, did) in designated
 
 
+def _authorize_v2(scratch: Scratch, did, walked: Walk):
+    """:func:`authorize` for a v2 stream: the same post-conditions, in the same order.
+
+    The credential returned is the walked ``acm`` that vetting accepted — bound mutually by a
+    vetted registry head and valid against the v2 schema. Nothing in keripy saves a v2
+    credential, so there is no database copy to read back as v1 does; what stands in for that is
+    that every byte of it was checked against what the issuer's KEL anchors (constraint
+    ``embuup``).
+    """
+    schema = schemaing.DES_ALIASES_SCHEMA_V2_SAID
+    candidates = [frame for frame in walked.frames if frame.is_acdc and frame.schema == schema]
+    if not candidates:
+        raise errors.ALIAS_ACDC_MISSING(did=did.compose())
+
+    granted = [
+        frame
+        for frame in candidates
+        if frame.principal == did.aid
+        and frame.regid in scratch.registries
+        and scratch.registries[frame.regid].record.issuer == did.aid
+        and frame.said in scratch.vetted
+    ]
+    if not granted:
+        raise errors.ALIAS_GRANT_MISSING(did=did.compose())
+
+    frame = granted[0]
+    # vet gives the disclosed state no meaning (regeventing.py, vet); the policy is ours, and
+    # anything but `issued` fails closed (decision 3kn6drgf).
+    if scratch.registries[frame.regid].record.state != "issued":
+        raise errors.ALIAS_ACDC_REVOKED(said=frame.said)
+    if not _covers(did, frame.serder):
+        raise errors.ALIAS_GRANT_SCOPE(did=did.compose())
+    return frame.serder
+
+
 def authorize(scratch: Scratch, did, walked: Walk):
     """The designated-aliases credential that authorizes this publication (design §Modules 3).
 
@@ -757,6 +1004,8 @@ def authorize(scratch: Scratch, did, walked: Walk):
     not the one the submitted bytes carried. Everything downstream derives from accepted state
     (constraint ``embuup``).
     """
+    if walked.version == V2:
+        return _authorize_v2(scratch, did, walked)
     schema = schemaing.load_designated_aliases_schema().said  # SAID recomputed at every load
     candidates = [frame for frame in walked.frames if frame.is_acdc and frame.schema == schema]
     if not candidates:
@@ -876,6 +1125,9 @@ def owned(scratch: Scratch, did, frame: Frame, aids, providers) -> bool:
         return frame.principal in aids
     if frame.is_acdc:
         return frame.principal == did.aid
+    if frame.proto == ACDC and frame.is_tel:
+        registry = scratch.registries.get(frame.regid)
+        return registry is not None and registry.record.issuer == did.aid
     if frame.is_tel:
         tever = scratch.regery.reger.tevers.get(frame.principal)
         if tever is not None:
@@ -953,6 +1205,16 @@ class Verified:
     scratch: Scratch
 
     @property
+    def version(self):
+        """The protocol version the publication was read and verified under."""
+        return self.scratch.version
+
+    @property
+    def registries(self) -> dict:
+        """v2 only: the vetted registries, by SAID, with every update's disclosure."""
+        return self.scratch.registries
+
+    @property
     def hby(self) -> habbing.Habery:
         """The scratch keystore holding the accepted key and reply state."""
         return self.scratch.hby
@@ -994,7 +1256,7 @@ def ingest(stream: bytes, did) -> Verified:
     require_no_third_party(did, walked)
     require_delegator(did, walked)
 
-    scratch = open_scratch()
+    scratch = open_scratch(walked.version)
     try:
         scratch.load(stream)
         audit(scratch, did, walked)

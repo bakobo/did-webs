@@ -36,6 +36,8 @@ DESIGN_TABLE = frozenset(
         "e.input.format.did.f",
         "e.input.format.stream.f",
         "e.feature.unsupported.serialization.f",
+        "e.feature.unsupported.registry.event.f",
+        "e.proof.stream.disclosure.f",
         "e.input.missing.alias-acdc.f",
         "e.input.missing.delegator.f",
         "e.proof.stream.sig.f",
@@ -76,14 +78,14 @@ def values_for(entry: ErrorCode) -> dict:
 def test_the_registry_declares_exactly_the_codes_the_design_table_names():
     """The gate, in both directions.
 
-    A twenty-second code minted in ``didwebs/errors.py`` and not added to :data:`DESIGN_TABLE` shows
+    A twenty-fifth code minted in ``didwebs/errors.py`` and not added to :data:`DESIGN_TABLE` shows
     up in ``REGISTRY`` and fails this equality — because the set is *found*, not restated, so a
     new declaration cannot be invisible to it. A code named here and deleted from the module
     fails it too, which is what stops a shipped code being quietly retired. Either way the fix is
     the same and it is the right one: reconcile ``docs/design.md``'s table, then this set.
     """
     assert set(REGISTRY) == DESIGN_TABLE
-    assert len(DESIGN_TABLE) == 22
+    assert len(DESIGN_TABLE) == 24
 
 
 def test_no_two_names_in_the_module_declare_the_same_code():

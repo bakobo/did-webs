@@ -212,11 +212,12 @@ from `bakobo-errors`, pinned git+https at `45f42ae` (public repo, anonymous reso
 | `e.input.format.did.f` | string is not a valid did:webs identifier |
 | `e.input.format.stream.f` | stream cannot be walked frame-by-frame (garbled CESR, unversioned frame) |
 | `e.feature.unsupported.serialization.f` | walkable v1 frame outside the JSON-only accepted set (CBOR/MGPK) |
+| `e.feature.unsupported.registry.event.f` | a v2 registry event other than `rip`/`bup` — `upd` is the case: the ACDC spec lists it, WebOfTrust keripy refuses it (decision `0plkq8s8`) |
 | `e.input.missing.alias-acdc.f` | no designated-aliases ACDC in the stream (absence established: we hold and walked the whole stream) |
 | `e.input.missing.delegator.f` | delegated AID but no delegator KEL in the stream |
-| `e.proof.stream.*.f` (leaves per audit source: `sig`, `seal`, `anchor`, `frame`) | a walked frame not accepted by keripy — attributed via the escrow/accounting audit |
+| `e.proof.stream.*.f` (leaves per audit source: `sig`, `seal`, `anchor`, `frame`, `disclosure`) | a walked frame not accepted by keripy — attributed via the escrow/accounting audit; for v2, a registry event `regeventing.vet` refuses (`anchor`, `frame`), or a `bup` without a verifiable BlindedStateQuadruples disclosure (`disclosure`, decision `3kn6drgf`) |
 | `e.state.conflict.kel.f` | likely-duplicitous escrow non-empty: the submission forks its own KEL |
-| `e.state.revoked.alias-acdc.f` | designated-aliases ACDC revoked per direct `Tever.vcState` query |
+| `e.state.revoked.alias-acdc.f` | designated-aliases ACDC revoked per direct `Tever.vcState` query (v1), or the v2 registry head's disclosed state is anything but `issued` |
 | `e.grant.missing.alias.f` | ACDC present but not the claimed AID's authorization (wrong issuer, or registry not anchored in the claimed AID's KEL) |
 | `e.grant.scope.alias.f` | controller's own ACDC does not cover the claimed DID (or its did:web form) under normalized equality |
 | `e.rule.alias.aid.mismatch.f` | an `a.ids` entry names a different AID than the stream verifies (spec same-AID constraint) |

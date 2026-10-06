@@ -7,13 +7,15 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 22 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
+The 24 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
 from that table's rev 2 (2026-08-14); `e.input.range.stream.f` was added with the stream door
 (constraint `adyiw2mm`), and `e.self.corrupt.did.f` with the artifact-join containment check
 (constraint `a2sbz34i`), and `e.self.corrupt.witness-replay.f` with the interop replay
-(decision `t3q6azxm`). The table carries fewer rows than codes, because
-`e.proof.stream.*.f` is written once and names its four leaves — `sig`, `seal`, `anchor`,
-`frame` — in the same cell, the audit picking between them by which escrow held the frame.
+(decision `t3q6azxm`), and `e.feature.unsupported.registry.event.f` and
+`e.proof.stream.disclosure.f` with KERI protocol v2 (decisions `0plkq8s8`, `3kn6drgf`). The
+table carries fewer rows than codes, because `e.proof.stream.*.f` is written once and names its
+five leaves — `sig`, `seal`, `anchor`, `frame`, `disclosure` — in the same cell, the audit
+picking between them by which escrow held the frame or which registry check refused it.
 
 The rev-2 nineteen were checked against the bakobo/errors catalog at the `bakobo-errors` pin —
 none collides with a shipped code, and three are boundary cases against heti's near-neighbors,
@@ -103,6 +105,30 @@ DELEGATOR_MISSING = ErrorCode(
     hint="Include the delegator's key event log in the submission.",
 )
 
+REGISTRY_EVENT_UNSUPPORTED = ErrorCode(
+    "e.feature.unsupported.registry.event.f",
+    "The stream carries a registry event type this build does not accept.",
+    detail="The frame {frame} is a {ilk} registry event. A protocol v2 registry here is "
+    "registry inception (rip) and blindable updates (bup) only, which is what WebOfTrust "
+    "keripy accepts.",
+    args=("frame", "ilk"),
+    hint="Record registry state with blindable updates (bup), each published with its "
+    "disclosure.",
+)
+# Decision 0plkq8s8. `upd` is the case that motivated it: the ACDC spec still lists it, keripy
+# main dropped it, so a stream depending on it is not one the reference verifier accepts.
+
+REGISTRY_STATE_UNPROVABLE = ErrorCode(
+    "e.proof.stream.disclosure.f",
+    "A registry update's state cannot be proven from the stream.",
+    detail="The registry update {frame} is blinded, and the stream carries no disclosure of "
+    "its state, or a disclosure that does not match what the update commits to.",
+    args=("frame",),
+    hint="Publish every blindable update with its BlindedStateQuadruples (-a) disclosure, as "
+    "the ACDC specification's public blindable mode prescribes.",
+)
+# Decision 3kn6drgf: a public attestation whose state is unreadable cannot authorize anything.
+
 STREAM_SIG_INVALID = ErrorCode(
     "e.proof.stream.sig.f",
     "A frame in the stream failed signature verification.",
@@ -155,8 +181,8 @@ KEL_FORKED = ErrorCode(
 ALIAS_ACDC_REVOKED = ErrorCode(
     "e.state.revoked.alias-acdc.f",
     "The designated-aliases credential has been revoked.",
-    detail="The designated-aliases ACDC {said} is revoked, per direct query of its registry's "
-    "transaction event log.",
+    detail="The designated-aliases ACDC {said} is revoked, per the verified state of its "
+    "registry.",
     args=("said",),
     hint="Issue a fresh designated-aliases credential before resubmitting.",
 )
