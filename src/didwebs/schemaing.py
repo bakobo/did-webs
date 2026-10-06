@@ -40,6 +40,14 @@ DES_ALIASES_SCHEMA_SAID = "EN6Oh5XSD5_q2Hgu-aqpdfbVepdpYpFlgz6zvJL5b_r5"
 RESOURCE_DIR = "schemas"
 
 SCHEMA_RESOURCE = "designated-aliases-public-schema.json"
+
+#: SAID of the v2 Designated Aliases Public Attestation schema: v1's with ``ri`` renamed ``rd`` and
+#: ``u``/``t`` admitted, derived by ``tools/mint-v2-aliases-schema``. PROPOSED, not standardized:
+#: the did:webs spec names no schema for either version, so this one is ours until the community
+#: adopts it or another (decision ``35yl884k``).
+DES_ALIASES_SCHEMA_V2_SAID = "EDTdIQoJ9snPZ5tOn0EgMYmFmE9pHEUFgQD5W1Y-AGIc"
+
+SCHEMA_V2_RESOURCE = "designated-aliases-public-schema-v2.json"
 RULES_RESOURCE = "desig-aliases-public-schema-rules.json"
 
 
@@ -58,29 +66,37 @@ def read_designated_aliases_schema() -> dict:
     return _read_resource(SCHEMA_RESOURCE)
 
 
+def read_designated_aliases_schema_v2() -> dict:
+    """Return the bundled v2 schema as a dict, with no integrity check (see the v1 reader)."""
+    return _read_resource(SCHEMA_V2_RESOURCE)
+
+
 def read_designated_aliases_rules() -> dict:
     """Return the bundled designated-aliases rules block as a dict."""
     return _read_resource(RULES_RESOURCE)
 
 
-def verified_schemer(sed: dict) -> scheming.Schemer:
-    """Return a ``Schemer`` over ``sed``, refusing anything but the pinned schema.
+def verified_schemer(sed: dict, pinned: str = DES_ALIASES_SCHEMA_SAID) -> scheming.Schemer:
+    """Return a ``Schemer`` over ``sed``, refusing anything but the ``pinned`` schema.
 
     Raises:
         BakoboError: ``e.self.corrupt.schema.f`` when the recomputed SAID is not the pinned
             one — our packaging fault, never the submitter's.
     """
     schemer = scheming.Schemer(sed=sed)
-    if schemer.said != DES_ALIASES_SCHEMA_SAID:
-        raise errors.SCHEMA_CORRUPT(
-            computed=schemer.said, pinned=DES_ALIASES_SCHEMA_SAID
-        )
+    if schemer.said != pinned:
+        raise errors.SCHEMA_CORRUPT(computed=schemer.said, pinned=pinned)
     return schemer
 
 
 def load_designated_aliases_schema() -> scheming.Schemer:
     """Load and verify the bundled designated-aliases schema."""
     return verified_schemer(read_designated_aliases_schema())
+
+
+def load_designated_aliases_schema_v2() -> scheming.Schemer:
+    """Load and verify the bundled v2 designated-aliases schema."""
+    return verified_schemer(read_designated_aliases_schema_v2(), DES_ALIASES_SCHEMA_V2_SAID)
 
 
 def pin_designated_aliases_schema(hby: habbing.Habery) -> scheming.Schemer:
