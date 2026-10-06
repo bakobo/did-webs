@@ -217,6 +217,42 @@ def issue_aliases(
     return Issued(registry, creder, iss_serder, iss_anchor)
 
 
+def _emit_stream_v2(verified) -> bytes:
+    """:func:`emit_stream` for a v2 publication: the same derivation, in v2's shape.
+
+    One genus-version counter, then the key event log (the delegator's first) replayed from the
+    scratch database at genus v2, then the accepted reply records, then every accepted credential,
+    then every vetted registry with each update carrying the disclosure ingest verified against
+    its BLID (decision ``3kn6drgf``).
+
+    Two differences from v1, both deliberate. The KEL is keripy's own v2 clone, without v1's
+    projection of witness signatures into receipt couples: that projection serves v1 consumers
+    and is written in v1 counters, and a v2 clone carries the indexed witness signatures
+    natively. And credentials precede registries, so that the stream ends on an attached
+    update -- keripy's extractor cannot finish an attachment-less final frame. A spare registry
+    goes before the designation's, which always has an update, for the same reason.
+    """
+    db = verified.hby.db
+    kever = verified.hby.kevers[verified.aid]
+
+    msgs = bytearray(counting.Counter.makeGVC(version=V2))
+    for msg in db.cloneDelegation(kever=kever, gvrsn=V2):
+        msgs.extend(msg)
+    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V2):
+        msgs.extend(msg)
+    for frame in verified.frames:
+        if frame.ilk == REPLY:
+            msgs.extend(_reply_bytes(db, frame.said, gvrsn=V2))
+
+    registries = sorted(verified.registries.values(), key=lambda r: r.credential is not None)
+    for registry in registries:
+        if registry.credential is not None:
+            msgs.extend(registry.credential.raw)
+    for registry in registries:
+        msgs.extend(registry_v2_bytes(registry.rip, registry.updates, registry.blinders))
+    return bytes(msgs)
+
+
 # ------------------------------------------------ the keystore side, KERI protocol v2
 
 
@@ -341,15 +377,17 @@ def registry_v2_bytes(rip, bups, blinders) -> bytes:
     return bytes(msgs)
 
 
-def keystore_stream_v2(hab: habbing.Hab, issued: IssuedV2) -> bytes:
+def keystore_stream_v2(hab: habbing.Hab, issued: IssuedV2, *, replies: bytes = b"") -> bytes:
     """A v2 publication stream assembled from a keystore *we* control.
 
-    Genus-version counter, the KEL, the ACDC, then the registry. The ACDC precedes its registry
+    Genus-version counter, the KEL, any ``replies`` (signed ``rpy`` records the caller made at
+    genus v2), the ACDC, then the registry. The ACDC precedes its registry
     for a mechanical reason: it carries no attachment, and keripy's extractor cannot finish an
     attachment-less final frame, so an attached ``bup`` goes last.
     """
     msgs = bytearray(counting.Counter.makeGVC(version=V2))
-    msgs.extend(hab.replay(pre=hab.pre, gvrsn=V2))
+    msgs.extend(hab.replay(pre=hab.pre, gvrsn=V2))  # a delegate's delegator first
+    msgs.extend(replies)
     msgs.extend(issued.acdc.raw)
     msgs.extend(registry_v2_bytes(issued.rip, issued.bups, issued.blinders))
     return bytes(msgs)
@@ -369,7 +407,7 @@ REPLY = "rpy"
 REGISTRY = "vcp"
 
 
-def _reply_bytes(db, said: str) -> bytes:
+def _reply_bytes(db, said: str, gvrsn=V1) -> bytes:
     """Re-assemble one BADA-accepted reply record from the state keripy stored for it.
 
     A port of ``Hab.loadLocScheme``/``loadEndRole``, keyed by SAID rather than by walking the
@@ -390,7 +428,7 @@ def _reply_bytes(db, said: str) -> bytes:
 
     return bytes(
         eventing.messagize(
-            serder=serder, cigars=[cigar] if cigar else [], tsgs=tsgs, gvrsn=V1
+            serder=serder, cigars=[cigar] if cigar else [], tsgs=tsgs, gvrsn=gvrsn
         )
     )
 
@@ -512,6 +550,9 @@ def emit_stream(verified) -> bytes:
     Returns:
         bytes: the ``keri.cesr`` artifact.
     """
+    if verified.version == V2:
+        return _emit_stream_v2(verified)
+
     hby = verified.hby
     db = hby.db
     reger = verified.regery.reger

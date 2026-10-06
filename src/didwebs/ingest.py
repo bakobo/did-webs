@@ -791,6 +791,9 @@ class VettedRegistry:
     rip: object
     updates: tuple
     blinders: tuple
+    #: The credential the head binds, when vetting accepted it; None for a registry that binds
+    #: nothing this build accepts (a spare registry, or one whose credential was refused).
+    credential: object = None
 
 
 #: keripy's registry-chain refusals that are about anchoring in the issuer's KEL.
@@ -857,11 +860,18 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
         except kering.ValidationError as fault:  # the head's disclosure was already vetted
             raise errors.STREAM_FRAME_REJECTED(frame=rip.said) from fault
 
+        accepted_credential = (
+            bound is not None and record.binding == "mutual" and _schema_valid(schemer, bound)
+        )
         scratch.registries[rip.said] = VettedRegistry(
-            record, rip.serder, tuple(u.serder for u in updates), tuple(blinders)
+            record,
+            rip.serder,
+            tuple(u.serder for u in updates),
+            tuple(blinders),
+            bound.serder if accepted_credential else None,
         )
         scratch.vetted.update([rip.said, *(update.said for update in updates)])
-        if bound is not None and record.binding == "mutual" and _schema_valid(schemer, bound):
+        if accepted_credential:
             scratch.vetted.add(bound.said)
 
 

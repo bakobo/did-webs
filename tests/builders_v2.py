@@ -314,6 +314,92 @@ def garbage_tail(tmp_path) -> builders.Fixture:
     return builders.Fixture(fixture.stream + b'{"v":"KERICAACAAJSON', facts)
 
 
+def spare_registry(tmp_path) -> builders.Fixture:
+    """A valid publication whose controller also incepted and anchored a second registry it
+    never issued from. That registry is the controller's own accepted material, so it must be
+    hosted, not dropped (the v1 rule, constraint embuup)."""
+    with keri_api.scratch_v2("spare", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        spare = Registrar(rgy=rgy).makeRegistry(
+            name="spare", prefix=hab.pre, uuid=keri_api.REGISTRY_NONCE_V2_SPARE,
+            stamp=keri_api.REGISTRY_STAMP,
+        )
+        spare_rip = rgy.store.event(spare.regk)
+        assemble._anchor_v2(hab, spare, spare_rip)
+        stream = (
+            GENUS + _kel(hab) + issued.acdc.raw + spare_rip.raw
+            + assemble.registry_v2_bytes(issued.rip, issued.bups, issued.blinders)
+        )
+        return builders.Fixture(
+            stream, _facts("spare_registry", hab, issued, spare_regk=spare_rip.said)
+        )
+
+
+def _delegated(tmp_path, *, include_delegator: bool):
+    with keri_api.scratch_v2("delegate", tmp_path, salt_raw=keri_api.DELEGATOR_SALT) as (hby, rgy):
+        delegator = keri_api.make_hab_v2(hby, "delegator")
+        delegate = keri_api.make_hab_v2(hby, "delegate", delpre=delegator.pre)
+        delegator.interact(data=[keri_api.delegable_seal(hby, delegate.pre)], version=V2)
+        hby.kvy.processEscrows()
+        issued = assemble.issue_aliases_v2(
+            delegate, rgy, keri_api.designated_ids(delegate.pre), uuid=keri_api.REGISTRY_UUID,
+            salt=keri_api.BLIND_SALT, stamp=keri_api.REGISTRY_STAMP,
+        )
+        if include_delegator:
+            stream = assemble.keystore_stream_v2(delegate, issued)
+        else:
+            stream = (
+                GENUS + _kel(delegate) + issued.acdc.raw
+                + assemble.registry_v2_bytes(issued.rip, issued.bups, issued.blinders)
+            )
+        return stream, _facts(
+            "delegated" if include_delegator else "delegated:no-delegator",
+            delegate, issued,
+            None if include_delegator else "e.input.missing.delegator.f",
+            delegator_aid=delegator.pre,
+        )
+
+
+def delegated(tmp_path) -> builders.Fixture:
+    """A delegated v2 AID's publication, with its delegator's KEL first."""
+    return builders.Fixture(*_delegated(tmp_path, include_delegator=True))
+
+
+def delegated_without_delegator(tmp_path) -> builders.Fixture:
+    """The same publication without the delegator's KEL: the delegation seal is uncheckable."""
+    return builders.Fixture(*_delegated(tmp_path, include_delegator=False))
+
+
+def endpoints(tmp_path) -> builders.Fixture:
+    """A valid publication with a mailbox and an agent, each declaring its own location and
+    authorized in its role by the controller, all as v2 ``rpy`` records."""
+    with keri_api.scratch_v2("endpoints", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        providers = []
+        for name, salt_raw, role, url in (
+            ("mailbox", keri_api.MAILBOX_SALT, keri_api.MAILBOX_ROLE, keri_api.MAILBOX_URL),
+            ("agent", keri_api.AGENT_SALT, keri_api.AGENT_ROLE, keri_api.AGENT_URL),
+        ):
+            provider = keri_api.make_hab_v2(
+                hby, name, transferable=False, salt=keri_api.salt(salt_raw)
+            )
+            providers.append((provider, role, url))
+        replies = bytearray()
+        for provider, _role, url in providers:
+            replies.extend(provider.makeLocScheme(url=url, scheme="http", version=V2, gvrsn=V2))
+        for provider, role, _url in providers:
+            replies.extend(hab.makeEndRole(eid=provider.pre, role=role, version=V2, gvrsn=V2))
+        stream = assemble.keystore_stream_v2(hab, issued, replies=bytes(replies))
+        return builders.Fixture(
+            stream,
+            _facts(
+                "endpoints", hab, issued,
+                mailbox_aid=providers[0][0].pre, agent_aid=providers[1][0].pre,
+                mailbox_url=keri_api.MAILBOX_URL, agent_url=keri_api.AGENT_URL,
+            ),
+        )
+
+
 def trailing_v1_body(tmp_path) -> builders.Fixture:
     """A valid v2 publication followed by one whole, attachment-less v1 credential body: the
     final-frame reader can read it, and refuses it for its version."""
@@ -359,8 +445,12 @@ KNOBS = {
     "garbage_tail": garbage_tail,
     "trailing_v1_body": trailing_v1_body,
     "genus_per_artifact": genus_per_artifact,
+    "spare_registry": spare_registry,
+    "delegated": delegated,
+    "delegated:no-delegator": delegated_without_delegator,
+    "endpoints": endpoints,
 }
 
 #: Knobs whose stream must be refused, and the exact code each must earn.
-POSITIVE = ("base", "genus_per_artifact")
+POSITIVE = ("base", "genus_per_artifact", "spare_registry", "delegated", "endpoints")
 NEGATIVE = tuple(name for name in KNOBS if name not in POSITIVE)

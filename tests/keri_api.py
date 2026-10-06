@@ -221,6 +221,9 @@ BLIND_SALT = core.Salter(raw=b"didwebs-blinding").qb64
 #: names -- is the same on every run.
 REGISTRY_UUID = coring.Noncer(raw=b"didwebs-v2-registry-uuid-fixture").qb64
 
+#: A second fixed registry nonce, for a fixture whose controller incepts two registries.
+REGISTRY_NONCE_V2_SPARE = coring.Noncer(raw=b"didwebs-v2-spare-registry-fixtur").qb64
+
 #: Fixed timestamp for the v2 registry events, for the same reason.
 REGISTRY_STAMP = "2026-10-06T00:00:00.000000+00:00"
 
