@@ -902,7 +902,7 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
             raise errors.REGISTRY_STATE_UNPROVABLE(frame=updates[-1].said) from fault
         except _ANCHOR_FAULTS as fault:
             raise errors.STREAM_ANCHOR_INVALID(frame=rip.said) from fault
-        except kering.ValidationError as fault:
+        except kering.ValidationError as fault:  # ~2gon registry duplicity lands here too
             raise errors.STREAM_FRAME_REJECTED(frame=rip.said) from fault
 
         presented = {rip.said, *(update.said for update in updates)}
@@ -1048,7 +1048,7 @@ def _authorize_v2(scratch: Scratch, did, walked: Walk):
     frame = granted[0]
     # vet gives the disclosed state no meaning (regeventing.py, vet); the policy is ours, and
     # anything but `issued` fails closed (decision 3kn6drgf).
-    if scratch.registries[frame.regid].record.state != "issued":
+    if scratch.registries[frame.regid].record.state != "issued":  # ~6grg
         raise errors.ALIAS_ACDC_REVOKED(said=frame.said)
     if not _covers(did, frame.serder):
         raise errors.ALIAS_GRANT_SCOPE(did=did.compose())
