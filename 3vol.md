@@ -1,6 +1,7 @@
 # Decide whether didwebs follows bakobo/stack head 03f7d2d3 (178 commits past our 366d810): blocked on the crossimpl oracle's verdict on the ACDC attachment changing from SealSourceTriples to SealSourceCouples, which is an interop question for the 1.2.13 ecosystem and not just an internal pin. Diagnosis complete, see notes
 kind: todo
 created: 2026-08-15T00:00Z
+closed: 2026-10-06T01:48Z
 
 - 2026-08-28T04:16Z RESOLVED how, not whether (2026-08-28). Two corrections to this tick: heti now pins f663ecd, and that commit is NOT on main or bakobo/stack -- it is on feat/keyalg-on-stack, an unmerged branch carrying two key-algorithm commits heti needs. didwebs is Ed25519-only (3woefn), so following heti is wrong. The right target is bakobo/stack head 03f7d2d3 (Aug 21), 178 commits past our 366d810, which carries the ldes fix (0327e69b, closes ~3v45's upstream half) and the Parser fault sink (e09d7a5e, relevant to ~6ks5).
 
