@@ -1084,7 +1084,7 @@ def authorize(scratch: Scratch, did, walked: Walk):
     frame = granted[0]
     # Never inferred from the Verifier having saved it: keripy saves revoked credentials by
     # design and says so in a comment (verifying.py, processCredential). SEC-F4.
-    state = scratch.regery.reger.tevers[frame.regid].vcState(vci=frame.said)
+    state = scratch.regery.reger.tevers[frame.regid].vcState(vci=frame.said)  # ~3ivm
     if state is None or state.et in REVOKED_ILKS:
         raise errors.ALIAS_ACDC_REVOKED(said=frame.said)
 
