@@ -238,7 +238,7 @@ def _emit_stream_v2(verified) -> bytes:
     msgs = bytearray(counting.Counter.makeGVC(version=V2))
     for msg in db.cloneDelegation(kever=kever, gvrsn=V2):
         msgs.extend(msg)
-    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V2):
+    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V2):  # ~5zmu
         msgs.extend(msg)
     for frame in verified.frames:
         if frame.ilk == REPLY:

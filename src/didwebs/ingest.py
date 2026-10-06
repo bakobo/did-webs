@@ -283,7 +283,7 @@ def stream_version(stream: bytes):
     return V2 if stream.startswith(GENUS_V2) else V1
 
 
-def _final_frame(residue: bytes):
+def _final_frame(residue: bytes):  # ~3rz6
     """A v2 frame with no attachment at the very end of the stream, or None.
 
     keripy's extractor reads a body, then peeks for an attachment group and raises
