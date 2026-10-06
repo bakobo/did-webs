@@ -13,7 +13,7 @@ One file, CESR, carrying four things in this order:
 
 Constraints the pipeline enforces, each of which will refuse the submission rather than publish something partial:
 
-- **Every frame is JSON, protocol v1.** `KERI10JSON` and `ACDC10JSON` version strings only. CBOR and MGPK are refused (`e.feature.unsupported.serialization.f`), and so is a protocol-v2 frame (`e.input.format.stream.f`). The reason is interoperability rather than preference: the deployed did:webs ecosystem parses v1, and a v2 frame is silently dropped by every 1.2.x reader — see constraint `qbqfst`.
+- **Every frame is JSON, and every frame is one protocol version.** A v1 stream carries `KERI10JSON` and `ACDC10JSON` version strings only; a KERI protocol v2 stream is described in its own section below. CBOR and MGPK are refused (`e.feature.unsupported.serialization.f`), and so is a stream mixing versions (`e.input.format.stream.f`). Prefer v1 where you have the choice: the deployed did:webs ecosystem parses v1, a v2 frame is silently dropped by every 1.2.x reader (constraint `qbqfst`), and no third-party did:webs resolver reads v2 yet.
 - **The CESR attachment counters must be v1 genus too.** This is a separate axis from the version strings, and it is the one that catches people out: a stream can carry `KERI10JSON` bodies throughout and still attach counters no v1 parser can read. Recent keripy emits v2 counters by default, per call site.
 - **The ACDC's proof is a source-seal triple** (the `-IAB` attachment `keri.app.signing.serialize` emits). The form shown in the did:webs specification's own worked example, a `-FAB` transferable indexed signature group, is **not** readable — by us or by any other implementation, including the reference resolver. That is an upstream defect rather than a rule of ours, but until it is fixed, a stream carrying that form will be refused.
 - **The credential is self-attested, issued by the claimed AID, from a registry anchored in the claimed AID's own KEL**, and its `a.ids` must list the DID being published — both the `did:webs:` form and the corresponding `did:web:` form.
@@ -21,6 +21,18 @@ Constraints the pipeline enforces, each of which will refuse the submission rath
 - **8 MiB**, which is a flood guard rather than a budget. A real publication is a few kB.
 
 The schema is pinned and not negotiable: `EN6Oh5XSD5_q2Hgu-aqpdfbVepdpYpFlgz6zvJL5b_r5`, the Designated Aliases Public Attestation.
+
+## A KERI protocol v2 stream
+
+A controller whose AID is protocol v2 publishes a v2 stream (decisions `0plkq8s8`, `3kn6drgf` and `35yl884k` in `this.i`). There is no flag: `didwebs publish` reads the version from the stream. It differs from the v1 stream above in these ways, and each one is enforced:
+
+1. **It opens with the CESR v2 genus-version counter** (`-_AAACAA`), and every frame in it is v2. A stream mixing v1 and v2 frames is refused.
+2. **The registry is a v2 ACDC registry**: a `rip` (registry inception) and blindable updates (`bup`), each anchored by a seal in the AID's own KEL. There is no `vcp` or `iss`. A `upd` update is refused (`e.feature.unsupported.registry.event.f`): the ACDC spec lists it, but WebOfTrust keripy no longer accepts it.
+3. **Every `bup` carries its disclosure**: the blinded state block, attached as a BlindedStateQuadruples (`-a`) group, which is the ACDC specification's public blindable mode. Without it nobody can read whether the designation is issued or revoked, so an undisclosed or mismatched one is refused (`e.proof.stream.disclosure.f`). keripy's `Registrar.issue` returns each update's blinder and persists none of them, so keep them, or derive them from a salt you are willing to publish.
+4. **The credential is an `acm`** under the proposed v2 designated-aliases schema, `EDTdIQoJ9snPZ5tOn0EgMYmFmE9pHEUFgQD5W1Y-AGIc` (the v1 schema with `ri` renamed `rd` and `u`/`t` admitted). It carries `rd` naming its registry and no proof attachment: the anchored `bup` that binds it is its proof.
+5. **Order**: KEL, any `rpy` records, the credential, then the registry with the attached `bup` last. Ingest also accepts the credential last, but some readers cannot finish an attachment-less final frame, and what we host always ends on the `bup`.
+
+`didwebs.assemble.issue_aliases_v2` and `keystore_stream_v2` produce exactly this from a keripy keystore, and are the reference for anyone building it with other tooling.
 
 ## With `kli`
 
