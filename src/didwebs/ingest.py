@@ -238,6 +238,7 @@ def _frame(serder, sigers, disclosures=()) -> Frame:
             schema=serder.schema,
             serder=serder,
             sigers=tuple(sigers),
+            disclosures=tuple(disclosures),
         )
     return Frame(
         said=serder.said,
@@ -330,13 +331,20 @@ def walk(stream: bytes) -> Walk:
             # A genus-version counter mid-stream is consumed with the message after it, so every
             # completed extraction yields a message (the genus_per_artifact fixture holds this).
             message = done.value
-            frames.append(_frame(message.serder, message.sigers, message.bsqs))
+            try:
+                frames.append(_frame(message.serder, message.sigers, message.bsqs))
+            except ValueError:  # e.g. a SAID-valid registry event whose `n` is not hex
+                failure = WalkFailure(fault="format")
+                break
         except ShortageError:
             last = _final_frame(residue) if version == V2 else None
             if last is None:
                 failure = _classify(residue)
             else:
-                frames.append(_frame(last, ()))
+                try:
+                    frames.append(_frame(last, ()))
+                except ValueError:
+                    failure = WalkFailure(fault="format")
             break
         except Exception:  # noqa: BLE001 — keripy raises many extraction error types
             failure = _classify(residue)
@@ -784,7 +792,8 @@ class VettedRegistry:
     """A v2 registry as ``regeventing.vet`` verified it, with the disclosure of every update.
 
     ``record`` is keripy's verdict on the chain. ``updates`` and ``blinders`` run in step and in
-    sequence order; every blinder was checked against the BLID its update commits to.
+    sequence order; a blinder is the disclosure the stream carried for that update, and None
+    where it carried none, which ``vetBinds`` allows only before the latest non-vacuous update.
     """
 
     record: object  # keri.acdc.regeventing.RegStateRecord
@@ -800,43 +809,74 @@ class VettedRegistry:
 _ANCHOR_FAULTS = (kering.MissingAnchorError, kering.MisanchorError, kering.RootSealError)
 
 
-def _disclosure(frame: Frame):
-    """The one blinded-state disclosure a published bup carries, verified against its BLID.
+def _disclosures(walked: Walk) -> dict:
+    """Every blinded-state disclosure the stream carries, keyed by the BLID it discloses.
 
-    Raises:
-        BakoboError: ``e.proof.stream.disclosure.f`` for no disclosure, more than one, or
-            one that is not the state the update commits to (decision ``3kn6drgf``).
+    A disclosure is a BlindedStateQuadruples block, and the ACDC spec lets it ride on any
+    message, the update itself or the ACDC (spec-body.md:2062), several to a group. So they are
+    collected from every frame and matched to updates by BLID, as keripy's ``vetBinds`` matches
+    them. The same disclosure attached twice is one disclosure.
     """
-    if len(frame.disclosures) != 1:
-        raise errors.REGISTRY_STATE_UNPROVABLE(frame=frame.said)
-    crew = frame.disclosures[0]
-    blinder = Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in crew))
-    try:
-        regeventing.vetBlind(blinder, blid=frame.serder.sad["b"])
-    except kering.UnverifiedBlindError as fault:
-        raise errors.REGISTRY_STATE_UNPROVABLE(frame=frame.said) from fault
-    return blinder
+    found = {}
+    for frame in walked.frames:
+        for crew in frame.disclosures:
+            blinder = Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in crew))
+            found.setdefault(blinder.said, blinder)
+    return found
+
+
+def _bound_target(updates, disclosures) -> str | None:
+    """The credential the latest non-vacuous update discloses, or None if no update does.
+
+    Read newest first, as ``vetBinds`` reads them; an update with no disclosure stops the search,
+    since ``vetBinds`` will then refuse the registry for exactly that reason.
+    """
+    for update in sorted(updates, key=lambda f: f.sn, reverse=True):
+        blinder = disclosures.get(update.serder.sad["b"])
+        if blinder is None:
+            return None
+        if blinder.acdc or blinder.state:
+            return blinder.acdc
+    return None
+
+
+def _anchored_registry_events(scratch: Scratch, issuer: str, regid: str) -> set[str]:
+    """SAIDs of every ``regid`` event a seal in ``issuer``'s accepted KEL commits to."""
+    found = set()
+    for msg in scratch.hby.db.clonePreIter(pre=issuer, fn=0, gvrsn=V2):
+        for seal in serdering.SerderKERI(raw=bytes(msg)).sad.get("a", []):
+            if isinstance(seal, dict) and seal.get("i") == regid and "d" in seal:
+                found.add(seal["d"])
+    return found
 
 
 def vet_registries(scratch: Scratch, walked: Walk) -> None:
     """Verify every v2 registry the stream carries, and record what that verification accepted.
 
     keripy's Parser refuses every ACDC message with an ilk, so a v2 registry never reaches a
-    Tevery and nothing would ever call it accepted. Instead each registry is handed, with every
-    one of its updates, to ``keri.acdc.regeventing.vet`` — WebOfTrust keripy's own party-side
-    verifier — against the key event log the parser *did* accept. Every update must carry its
-    disclosure (:func:`_disclosure`), the head's is what ``vet`` binds the credential with, and a
-    credential is accepted only when a vetted head binds it mutually and it validates against the
-    v2 designated-aliases schema it names. Anything vetting does not accept stays unaccounted and
-    is attributed by the audit, exactly as an escrowed v1 frame is.
+    Tevery and nothing would ever call it accepted. Instead each registry goes to keripy's own
+    issuer-registry verifier, ``keri.acdc.regeventing.vetBinds`` (``vet`` for a registry with no
+    updates), against the key event log the parser *did* accept (decision ``3kn6drgf``):
+    disclosures matched by BLID from anywhere in the stream, required from the head back to the
+    latest non-vacuous update, and the state read from that update. A credential is accepted only
+    when that update binds it mutually and it validates against the v2 schema it names.
+
+    Then completeness, which neither verifier checks: every event of the registry that the
+    issuer's KEL anchors must have been presented. An omitted revoking update would otherwise
+    leave the designation reading ``issued``.
+
+    Anything vetting does not accept stays unaccounted and is attributed by the audit, exactly
+    as an escrowed v1 frame is.
 
     Raises:
-        BakoboError: ``e.proof.stream.disclosure.f`` for an update without a verifiable
-            disclosure; ``e.proof.stream.anchor.f`` for a registry event its issuer's KEL does
-            not anchor; ``e.proof.stream.frame.f`` for any other chain fault keripy names.
+        BakoboError: ``e.proof.stream.disclosure.f`` for an update needing a disclosure that is
+            absent or does not match; ``e.proof.stream.anchor.f`` for a registry event the
+            issuer's KEL does not anchor; ``e.input.missing.registry.event.f`` for an anchored
+            event the stream omits; ``e.proof.stream.frame.f`` for any other chain fault.
     """
     tels = [frame for frame in walked.frames if frame.proto == ACDC and frame.is_tel]
     credentials = {frame.said: frame for frame in walked.frames if frame.is_acdc}
+    disclosures = _disclosures(walked)
     schemer = schemaing.load_designated_aliases_schema_v2()
 
     for rip in (frame for frame in tels if frame.ilk == REGISTRY_V2_INCEPTION):
@@ -844,21 +884,33 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
             (f for f in tels if f.ilk == REGISTRY_V2_UPDATE and f.regid == rip.said),
             key=lambda f: f.sn,
         )
-        blinders = [_disclosure(update) for update in updates]
-        head = blinders[-1] if blinders else None
-        bound = credentials.get(head.acdc) if head is not None else None
+        target = _bound_target(updates, disclosures)
+        bound = credentials.get(target) if target else None
         try:
-            record = regeventing.vet(
-                rip.serder,
-                [update.serder for update in updates],
-                db=scratch.hby.db,
-                acdc=bound.serder if bound is not None else None,
-                blinder=head,
-            )
+            if updates:
+                record = regeventing.vetBinds(
+                    rip.serder,
+                    [update.serder for update in updates],
+                    db=scratch.hby.db,
+                    blinders=list(disclosures.values()),
+                    target=target or "",
+                    acdc=bound.serder if bound is not None else None,
+                )
+            else:
+                record = regeventing.vet(rip.serder, [], db=scratch.hby.db)
+        except kering.UnverifiedBlindError as fault:
+            raise errors.REGISTRY_STATE_UNPROVABLE(frame=updates[-1].said) from fault
         except _ANCHOR_FAULTS as fault:
             raise errors.STREAM_ANCHOR_INVALID(frame=rip.said) from fault
-        except kering.ValidationError as fault:  # the head's disclosure was already vetted
+        except kering.ValidationError as fault:
             raise errors.STREAM_FRAME_REJECTED(frame=rip.said) from fault
+
+        presented = {rip.said, *(update.said for update in updates)}
+        missing = _anchored_registry_events(scratch, record.issuer, rip.said) - presented
+        if missing:
+            raise errors.REGISTRY_EVENT_MISSING(
+                aid=record.issuer, regid=rip.said, said=min(missing)
+            )
 
         accepted_credential = (
             bound is not None and record.binding == "mutual" and _schema_valid(schemer, bound)
@@ -867,10 +919,10 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
             record,
             rip.serder,
             tuple(u.serder for u in updates),
-            tuple(blinders),
+            tuple(disclosures.get(u.serder.sad["b"]) for u in updates),
             bound.serder if accepted_credential else None,
         )
-        scratch.vetted.update([rip.said, *(update.said for update in updates)])
+        scratch.vetted.update(presented)
         if accepted_credential:
             scratch.vetted.add(bound.said)
 

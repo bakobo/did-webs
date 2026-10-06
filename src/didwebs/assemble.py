@@ -340,7 +340,7 @@ def issue_aliases_v2(
         schema=schemaing.DES_ALIASES_SCHEMA_V2_SAID,
         attribute={"d": "", "dt": dt, "ids": list(ids)},
         rule=schemaing.read_designated_aliases_rules(),
-        uuid="",
+        uuid=None,  # absent, not empty: the public variant (decision 35yl884k)
         pvrsn=V2,
         gvrsn=V2,
     )
@@ -370,10 +370,17 @@ def revoke_aliases_v2(
 
 
 def registry_v2_bytes(rip, bups, blinders) -> bytes:
-    """A v2 registry as published: the ``rip``, then every ``bup`` with its ``-a`` disclosure."""
+    """A v2 registry as published: the ``rip``, then every ``bup`` with its ``-a`` disclosure.
+
+    A blinder of None publishes that update bare. Only updates older than the latest
+    non-vacuous one may lack a disclosure (decision ``3kn6drgf``); ingest refuses any other gap.
+    """
     msgs = bytearray(rip.raw)
     for bup, blinder in zip(bups, blinders, strict=True):
-        msgs.extend(messagize(bup, bonds=[blinder.data], framed=False, gvrsn=V2))
+        if blinder is None:
+            msgs.extend(bup.raw)
+        else:
+            msgs.extend(messagize(bup, bonds=[blinder.data], framed=False, gvrsn=V2))
     return bytes(msgs)
 
 

@@ -7,12 +7,13 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 24 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
+The 25 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
 from that table's rev 2 (2026-08-14); `e.input.range.stream.f` was added with the stream door
 (constraint `adyiw2mm`), and `e.self.corrupt.did.f` with the artifact-join containment check
 (constraint `a2sbz34i`), and `e.self.corrupt.witness-replay.f` with the interop replay
-(decision `t3q6azxm`), and `e.feature.unsupported.registry.event.f` and
-`e.proof.stream.disclosure.f` with KERI protocol v2 (decisions `0plkq8s8`, `3kn6drgf`). The
+(decision `t3q6azxm`), and `e.feature.unsupported.registry.event.f`,
+`e.proof.stream.disclosure.f` and `e.input.missing.registry.event.f` with KERI protocol v2
+(decisions `0plkq8s8`, `3kn6drgf`). The
 table carries fewer rows than codes, because `e.proof.stream.*.f` is written once and names its
 five leaves — `sig`, `seal`, `anchor`, `frame`, `disclosure` — in the same cell, the audit
 picking between them by which escrow held the frame or which registry check refused it.
@@ -117,6 +118,19 @@ REGISTRY_EVENT_UNSUPPORTED = ErrorCode(
 )
 # Decision 0plkq8s8. `upd` is the case that motivated it: the ACDC spec still lists it, keripy
 # main dropped it, so a stream depending on it is not one the reference verifier accepts.
+
+REGISTRY_EVENT_MISSING = ErrorCode(
+    "e.input.missing.registry.event.f",
+    "The stream omits a registry event its own key event log anchors.",
+    detail="The key event log of {aid} anchors registry event {said} in registry {regid}, and "
+    "the stream does not carry it. Registry state read without it could be stale: an omitted "
+    "update may be the one that revoked the designation.",
+    args=("aid", "regid", "said"),
+    hint="Submit the registry's complete event log: every event the issuer's key event log "
+    "anchors, with the disclosures it needs.",
+)
+# Decision 3kn6drgf, completeness (panel SEC-F1): verifiers check what is presented, never that
+# everything anchored was presented; the KEL already in hand is what makes the gap visible.
 
 REGISTRY_STATE_UNPROVABLE = ErrorCode(
     "e.proof.stream.disclosure.f",

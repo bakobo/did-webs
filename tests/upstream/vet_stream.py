@@ -12,7 +12,8 @@ The verification is upstream's own party-side verifier, ``keri.acdc.regeventing.
 2. Every message is walked with ``Parser.msgParsator``, genus pinned to v2.
 3. For each ``rip``, every registry update in the stream naming that registry (``bup`` *and*
    ``upd`` -- the script passes along whatever the stream carries and lets upstream decide), the
-   ``acm`` naming it, and the head ``bup``'s attached disclosure go to ``vet``.
+   ``acm`` naming it, and every disclosure the stream carries go to ``vetBinds``, the issuer-
+   registry verifier keripy's own IPEX uses; a registry with no updates goes to ``vet``.
 
 Usage: ``python vet_stream.py STREAM``. On success prints one JSON line per registry,
 ``{"regid", "issuer", "state", "binding", "acdc"}``, and exits 0. When upstream refuses
@@ -91,6 +92,29 @@ def messages(stream: bytes) -> list:
     return found
 
 
+def disclosures(found: list) -> dict:
+    """Every blinded-state disclosure carried anywhere in the stream, keyed by its BLID."""
+    out = {}
+    for message in found:
+        for bsq in getattr(message, "bsqs", None) or []:
+            blinder = Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in bsq))
+            out.setdefault(blinder.said, blinder)
+    return out
+
+
+def latest_target(updates: list, blinders: list) -> str:
+    """The credential SAID the latest non-vacuous update discloses, or '' when none can be read
+    (vetBinds then refuses the registry, which is the verdict this oracle reports)."""
+    by_blid = {blinder.said: blinder for blinder in blinders}
+    for update in sorted(updates, key=lambda u: int(u.sad["n"], 16), reverse=True):
+        blinder = by_blid.get(update.sad.get("b"))
+        if blinder is None:
+            return ""
+        if blinder.acdc or blinder.state:
+            return blinder.acdc
+    return ""
+
+
 def vet_all(stream: bytes, *, name: str = "upstream-oracle") -> list[dict]:
     """Vet every registry in ``stream`` with upstream keripy; one record per registry."""
     hby = Habery(name=name, base="", temp=True, version=Vrsn_2_0)
@@ -114,17 +138,18 @@ def vet_all(stream: bytes, *, name: str = "upstream-oracle") -> list[dict]:
                 ),
                 None,
             )
-            blinder = None
-            bups = [m for m in updates if m.serder.ilk == Ilks.bup]
-            if bups:
-                head = max(bups, key=lambda m: int(m.serder.sad["n"], 16))
-                if head.bsqs:
-                    blinder = Blinder(
-                        clan=BlindState, qb64=b"".join(item.qb64b for item in head.bsqs[0])
-                    )
-            record = regeventing.vet(
-                rip, [m.serder for m in updates], db=hby.db, acdc=acdc, blinder=blinder
-            )
+            # Upstream's issuer-registry reading (vetBinds, as keripy's own IPEX binds issuer
+            # registries): every disclosure in the stream, matched by BLID; the state is the
+            # latest non-vacuous update's. A registry with no updates has no binding to read.
+            blinders = list(disclosures(found).values())
+            if updates:
+                target = latest_target([m.serder for m in updates], blinders)
+                record = regeventing.vetBinds(
+                    rip, [m.serder for m in updates], db=hby.db, blinders=blinders,
+                    target=target, acdc=acdc,
+                )
+            else:
+                record = regeventing.vet(rip, [], db=hby.db)
             records.append(
                 {
                     "regid": record.regid,

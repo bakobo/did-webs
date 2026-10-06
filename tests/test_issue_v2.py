@@ -78,6 +78,9 @@ def test_the_designation_is_an_acm_under_the_v2_schema_naming_its_registry(tmp_p
     assert issued.acdc.sad["rd"] == issued.rip.said
     assert issued.acdc.attrib["ids"] == ids
     assert "i" not in issued.acdc.attrib, "self-attested: no issuee"
+    # An absent top-level u is the ACDC spec's public variant; an empty one would make it a
+    # metadata ACDC (spec-body.md:126, :168; decision 35yl884k).
+    assert "u" not in issued.acdc.sad
     assert schemaing.load_designated_aliases_schema_v2().verify(issued.acdc.raw)
 
 

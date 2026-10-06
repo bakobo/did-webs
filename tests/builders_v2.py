@@ -15,7 +15,7 @@ from __future__ import annotations
 import builders
 import keri_api
 from keri.acdc import Registrar, acdcmap, messaging
-from keri.core import Blinder, counting
+from keri.core import Blinder, counting, serdering
 from keri.core.eventing import messagize
 
 from didwebs import assemble, schemaing
@@ -274,12 +274,36 @@ def schema_invalid(tmp_path) -> builders.Fixture:
 
 
 def rip_only(tmp_path) -> builders.Fixture:
-    """The credential and its registry's inception, with no update recording its state."""
+    """The credential and its registry's inception, without the update that issued it -- which
+    the KEL in the same stream anchors, so the omission is visible (decision 3kn6drgf)."""
     with keri_api.scratch_v2("rip-only", tmp_path) as (hby, rgy):
         hab, issued = _issued(hby, rgy)
         stream = GENUS + _kel(hab) + issued.acdc.raw + issued.rip.raw
         return builders.Fixture(
-            stream, _facts("rip_only", hab, issued, "e.proof.stream.frame.f")
+            stream, _facts("rip_only", hab, issued, "e.input.missing.registry.event.f")
+        )
+
+
+def never_issued(tmp_path) -> builders.Fixture:
+    """A credential naming a registry that was incepted and anchored but never updated: nothing
+    binds it, so it is never accepted, and the accounting audit names it."""
+    with keri_api.scratch_v2("never-issued", tmp_path) as (hby, rgy):
+        hab = keri_api.make_hab_v2(hby, "controller")
+        registry = Registrar(rgy=rgy).makeRegistry(
+            name="r", prefix=hab.pre, uuid=keri_api.REGISTRY_UUID, stamp=keri_api.REGISTRY_STAMP
+        )
+        rip = rgy.store.event(registry.regk)
+        assemble._anchor_v2(hab, registry, rip)
+        acdc = acdcmap(
+            israid=hab.pre, regid=registry.regk, schema=schemaing.DES_ALIASES_SCHEMA_V2_SAID,
+            attribute={"d": "", "dt": assemble.DESIGNATION_DT,
+                       "ids": keri_api.designated_ids(hab.pre)},
+            rule=schemaing.read_designated_aliases_rules(), pvrsn=V2, gvrsn=V2,
+        )
+        issued = assemble.IssuedV2(registry, rip, acdc, (), ())
+        stream = GENUS + _kel(hab) + acdc.raw + rip.raw
+        return builders.Fixture(
+            stream, _facts("never_issued", hab, issued, "e.proof.stream.frame.f")
         )
 
 
@@ -425,6 +449,122 @@ def forked_kel(tmp_path) -> builders.Fixture:
     return builders.Fixture(fixture.stream + bytes(branch), facts)
 
 
+def _revoked(hby, rgy):
+    hab, issued = _issued(hby, rgy)
+    return hab, assemble.revoke_aliases_v2(
+        hab, rgy, issued, salt=keri_api.BLIND_SALT, stamp=keri_api.REGISTRY_STAMP
+    )
+
+
+def omitted_revocation(tmp_path) -> builders.Fixture:
+    """A revoked designation published without the revoking update, although the stream's own
+    KEL anchors it. Every presented event verifies; what is wrong is what is missing (panel
+    SEC-F1). Without a completeness check this published as ``issued``."""
+    with keri_api.scratch_v2("omitted", tmp_path) as (hby, rgy):
+        hab, issued = _revoked(hby, rgy)
+        stream = (
+            GENUS + _kel(hab) + issued.acdc.raw
+            + assemble.registry_v2_bytes(issued.rip, issued.bups[:1], issued.blinders[:1])
+        )
+        return builders.Fixture(
+            stream, _facts("omitted_revocation", hab, issued,
+                           "e.input.missing.registry.event.f",
+                           missing=issued.bups[1].said)
+        )
+
+
+def vacated(tmp_path) -> builders.Fixture:
+    """The designation issued, then a vacuous update (keripy's ``Registrar.vacate``) as head.
+    keripy reads the state as the latest non-vacuous update's, so this publishes as issued
+    (panel GOV-F1)."""
+    with keri_api.scratch_v2("vacated", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        blinder, bup = Registrar(rgy=rgy).vacate(
+            issued.registry, salt=keri_api.BLIND_SALT, stamp=keri_api.REGISTRY_STAMP
+        )
+        assemble._anchor_v2(hab, issued.registry, bup)
+        issued = assemble.IssuedV2(
+            issued.registry, issued.rip, issued.acdc,
+            (*issued.bups, bup), (*issued.blinders, blinder),
+        )
+        return builders.Fixture(
+            assemble.keystore_stream_v2(hab, issued), _facts("vacated", hab, issued)
+        )
+
+
+def disclosed_on_acdc(tmp_path) -> builders.Fixture:
+    """Every disclosure grouped in one -a group on the ACDC and the updates published bare,
+    which ACDC spec-body.md:2062 allows (panel SPC-F2)."""
+    with keri_api.scratch_v2("on-acdc", tmp_path) as (hby, rgy):
+        hab, issued = _revoked(hby, rgy)
+        issued = assemble.IssuedV2(
+            issued.registry, issued.rip, issued.acdc, issued.bups[:1], issued.blinders[:1]
+        )
+        hab_kel = _kel(hab, drop_last=1)  # the revocation is not part of this publication
+        acdc = messagize(issued.acdc, bonds=[b.data for b in issued.blinders], framed=False,
+                         gvrsn=V2)
+        stream = GENUS + hab_kel + issued.rip.raw + issued.bups[0].raw + bytes(acdc)
+        return builders.Fixture(stream, _facts("disclosed_on_acdc", hab, issued))
+
+
+def historical_blinder_lost(tmp_path) -> builders.Fixture:
+    """Issued, then issued again; the first update's disclosure is gone. Only the head back to
+    the latest non-vacuous update needs one, so this publishes (panel SKP-F1)."""
+    with keri_api.scratch_v2("lost", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        blinder, bup = Registrar(rgy=rgy).issue(
+            issued.registry, acdc=issued.acdc, state="issued", salt=keri_api.BLIND_SALT,
+            stamp=keri_api.REGISTRY_STAMP,
+        )
+        assemble._anchor_v2(hab, issued.registry, bup)
+        stream = (
+            GENUS + _kel(hab) + issued.acdc.raw + issued.rip.raw + issued.bups[0].raw
+            + bytes(messagize(bup, bonds=[blinder.data], framed=False, gvrsn=V2))
+        )
+        issued = assemble.IssuedV2(
+            issued.registry, issued.rip, issued.acdc, (*issued.bups, bup),
+            (*issued.blinders, blinder),
+        )
+        return builders.Fixture(stream, _facts("historical_blinder_lost", hab, issued))
+
+
+def non_hex_sn(tmp_path) -> builders.Fixture:
+    """A SAID-valid update whose ``n`` is not hex: unreadable as a registry event, refused as a
+    format fault rather than escaping as a bare exception (panel SEC-F2)."""
+    fixture = base(tmp_path)
+    walked_bup = fixture.stream[fixture.stream.index(b'{"v":"ACDCCAACAAJSON', fixture.stream.index(b'"t":"bup"') - 40):]
+    sad = dict(serdering.SerderACDC(raw=walked_bup).sad)
+    sad.update(n="zz", d="")
+    forged = serdering.SerderACDC(sad=sad, makify=True)
+    facts = {**fixture.facts, "knob": "non_hex_sn", "expected_code": "e.input.format.stream.f"}
+    return builders.Fixture(fixture.stream + forged.raw, facts)
+
+
+def non_hex_sn_midstream(tmp_path) -> builders.Fixture:
+    """The same malformed update, followed by another frame, so the extractor completes it
+    rather than stopping at end of stream."""
+    fixture = non_hex_sn(tmp_path)
+    base_stream = base(tmp_path / "again").stream
+    start = base_stream.index(b'{"v":"ACDC', base_stream.index(b'"t":"acm"') - 40)
+    acdc = serdering.SerderACDC(raw=base_stream[start:])
+    facts = {**fixture.facts, "knob": "non_hex_sn_midstream"}
+    return builders.Fixture(fixture.stream + acdc.raw, facts)
+
+
+def empty_attachment_group(tmp_path) -> builders.Fixture:
+    """An attachment-less ACDC followed by an empty attachment group (-CAA). keripy's extractor
+    refuses it, so we do (panel CSR-F1)."""
+    fixture = base(tmp_path)
+    start = fixture.stream.index(b'"t":"acm"') - 40
+    start = fixture.stream.index(b'{"v":"ACDC', start)
+    acm = serdering.SerderACDC(raw=fixture.stream[start:])
+    empty = bytes(counting.Counter(counting.Codens.AttachmentGroup, count=0, version=V2).qb64b)
+    stream = fixture.stream[: start + acm.size] + empty + fixture.stream[start + acm.size :]
+    facts = {**fixture.facts, "knob": "empty_attachment_group",
+             "expected_code": "e.input.format.stream.f"}
+    return builders.Fixture(stream, facts)
+
+
 def trailing_v1_body(tmp_path) -> builders.Fixture:
     """A valid v2 publication followed by one whole, attachment-less v1 credential body: the
     final-frame reader can read it, and refuses it for its version."""
@@ -465,6 +605,7 @@ KNOBS = {
     "foreign_schema": foreign_schema,
     "schema_invalid": schema_invalid,
     "rip_only": rip_only,
+    "never_issued": never_issued,
     "gapped_chain": gapped_chain,
     "truncated_tail": truncated_tail,
     "garbage_tail": garbage_tail,
@@ -476,10 +617,18 @@ KNOBS = {
     "endpoints": endpoints,
     "rotated": rotated,
     "forked_kel": forked_kel,
+    "omitted_revocation": omitted_revocation,
+    "vacated": vacated,
+    "disclosed_on_acdc": disclosed_on_acdc,
+    "historical_blinder_lost": historical_blinder_lost,
+    "non_hex_sn": non_hex_sn,
+    "non_hex_sn_midstream": non_hex_sn_midstream,
+    "empty_attachment_group": empty_attachment_group,
 }
 
 #: Knobs whose stream must be refused, and the exact code each must earn.
 POSITIVE = (
     "base", "genus_per_artifact", "spare_registry", "delegated", "endpoints", "rotated",
+    "vacated", "disclosed_on_acdc", "historical_blinder_lost",
 )
 NEGATIVE = tuple(name for name in KNOBS if name not in POSITIVE)
