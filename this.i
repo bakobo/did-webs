@@ -571,6 +571,15 @@ Production did:webs implementation on KERI = goal:
             that omits a revoking bup its own KEL seals would otherwise publish the designation
             as issued (panel SEC-F1, reproduced). The KEL is evidence already in hand, so this
             fetches nothing. The same gap exists in the v1 path and is recorded separately.
+            Which seals count: keripy matches an anchor by digest alone (sealDigests,
+            regeventing.py:272 -- a bare SAID, a mapping's `d`, whatever its `i`), so a seal is a
+            candidate registry anchor when it is a bare digest, a mapping with `d` and no `i`, or
+            a mapping whose `i` is the registry; one whose `i` names another identifier is that
+            identifier's claim and is not asked about. An unexplained candidate fails closed.
+            An earlier version counted only seals naming the registry, and the PR's hostile pass
+            published an omitted revocation anchored by a bare SAID through it. Accepted
+            tradeoff: a controller whose KEL anchors a bare or `{d}`-only digest of anything the
+            stream does not carry cannot publish v2 until it does.
 
             keripy's Parser refuses every non-null-ilk ACDC message (parsing.py msgProcess), so
             these frames never reach a Tevery or Verifier: they are walked, vetted against the
