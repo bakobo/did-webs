@@ -452,6 +452,12 @@ Production did:webs implementation on KERI = goal:
             registry's vcp serder. There the pin can only be checked, so assemble._v1 asserts
             the derived version at the call site; a keripy change that flips the derivation
             then fails where it happened rather than downstream in a stream nobody can read.
+            A fourth, signing.serialize, also takes no version argument but derives it from
+            keripy's global default rather than from anything of ours, so there is nothing to
+            check; from 6f95d314 on it is not called at all, and assemble reproduces the v1 form
+            it used to emit (@66g4hfd2). Reger.clonePreIter, which used to emit v1 attachment
+            counters unconditionally, moved into shape (a) at the same pin: it now takes a
+            gvrsn that defaults to v2.
             (c) The pin extends to *parsing*, which is a separate version axis: a Parser
             carries its own CESR genus version, also defaulting to v2 on this line, and a valid
             v1 stream fed to a v2-genus parser yields nothing at all — no exception, no
@@ -461,6 +467,31 @@ Production did:webs implementation on KERI = goal:
             construction and every parse call. Rejected treating the emit-side pin as covering
             both: the two versions are independent, and only the emit side has an oracle, so
             the parse-side pin is load-bearing and invisible without this note.
+
+        Follow the substrate pin, not stack = decision:
+          nid: 66g4hfd2
+          why: >
+            The keripy pin moves from 366d810 to bakobo/keripy 6f95d314 (sedi-substrate-v3, the
+            commit heti pins and the SEDI Summit freezes on), not to bakobo/stack, which tick
+            ~3vol had proposed. 6f95d314 contains 366d810 and carries what that tick wanted
+            stack for: the ldes escrow is live again (~3v45's upstream half), so the forked-KEL
+            fixture now lands in ldes rather than vanishing. It also puts didwebs on the same
+            commit as heti, the one bakobo producer of v2 AIDs, which is the precondition for
+            any v2 work here. Rejected stack: it is no longer where the estate converges.
+            What blocked ~3vol was an interop question: signing.serialize had begun emitting a
+            v2-genus SealSourceCouples where 1.2.13 had always received a v1 SealSourceTriples,
+            and gvimca says only the crossimpl oracle may settle a wire-format change. That
+            question disappears rather than being answered. assemble stops calling
+            signing.serialize and builds the v1 triple itself, byte-identical to 366d810's
+            function, so the wire format does not change at all. Rejected calling messagize with
+            gvrsn=V1, the fix ~3vol sketched: it emits couples, not triples, and so would have
+            needed the oracle's verdict this choice avoids. Measured 2026-10-06 by running six
+            builder streams through `didwebs publish` under both pins: did.json is
+            byte-identical in every accepting case, the refusing case refuses with the same
+            code, and keri.cesr differs only in first-seen datetimes, which also differ between
+            two runs at the old pin. Accepted tradeoff: didwebs now owns a copy of a keripy
+            serialization (eleven lines) that keripy no longer offers, and keeps it in step with
+            CESR v1 by hand; the genus oracle (qbqfst) is what notices if it drifts.
 
     Temporary keripy stores are contained per run, never identified by a shared namespace = constraint:
       id: l7ws7hdt
