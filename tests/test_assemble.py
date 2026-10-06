@@ -450,6 +450,23 @@ def test_an_acdc_carries_the_v1_source_seal_triple_366d810_emitted():
     )
 
 
+def test_a_compactly_stored_anchor_number_is_still_emitted_as_a_v1_seqner():
+    """keripy at 6f95d314 stores a credential's anchor ordinal as a ``Number``, and some of its
+    paths pick the compact ``M`` code (``keri/vdr/credentialing.py:280``). A v1 source-seal triple
+    requires the fixed-size ``0A`` Seqner, so the encoding is re-derived from the ordinal rather
+    than copied from whatever the store returned."""
+    creder = SimpleNamespace(raw=b'{"v":"ACDC10JSON000000_"}')
+    prefixer = coring.Prefixer(qb64="EA_AVYxO_ESje2sPvxhHfMI4curXbZkSI_0I5ULjKrKM")
+    saider = coring.Saider(qb64="EDiNotZFXqAXwHq1WJrMuwQkjlHwB-pohUG9HJzMH8rV")
+    compact = coring.Number(num=0)
+    assert compact.code == "M", "precondition: the store's compact encoding"
+
+    serialized = assemble.serialize_v1(creder, prefixer, compact, saider)
+
+    assert serialized == assemble.serialize_v1(creder, prefixer, coring.Seqner(sn=0), saider)
+    assert b"0AAAAAAAAAAAAAAAAAAAAAAA" in serialized
+
+
 @pytest.mark.parametrize("knob", ["base", "delegated", "deactivated"])
 def test_the_emitted_stream_re_ingests_to_the_same_state_and_the_same_document(knob, tmp_path):
     """Round-trip identity (design oracle 2), the strength rung: whatever the emission drops,

@@ -136,11 +136,15 @@ def serialize_v1(creder, prefixer, seqner, saider) -> bytes:
     From 6f95d314 keripy's ``serialize`` delegates to ``messagize(gvrsn=Version)`` with no way to
     pass the version, which would flip the attachment to a v2-genus SealSourceCouples — a change
     to the wire format the deployed ecosystem reads, where this keeps it exactly as it was.
+
+    ``seqner`` may arrive as a ``Number`` in keripy's compact ``M`` encoding, which is how the
+    credential store keeps some anchors from 6f95d314 on. A v1 triple carries a fixed-size ``0A``
+    Seqner, so the encoding is re-derived from the ordinal, never copied.
     """
     craw = bytearray(creder.raw)
     craw.extend(counting.Counter(counting.Codens.SealSourceTriples, count=1, version=V1).qb64b)
     craw.extend(prefixer.qb64b)
-    craw.extend(seqner.qb64b)
+    craw.extend(coring.Seqner(sn=seqner.sn).qb64b)
     craw.extend(saider.qb64b)
     return bytes(craw)
 
