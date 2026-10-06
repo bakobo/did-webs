@@ -256,6 +256,57 @@ def revoked_acdc(tmp_path) -> Fixture:
         )
 
 
+def omitted_revocation(tmp_path) -> Fixture:
+    """Issued, then revoked, published without the ``rev`` although the stream's own KEL anchors
+    it (constraint ``4f74sjd8``). Every presented frame verifies, and keripy would read the
+    credential as issued; what is wrong is what is missing."""
+    with keri_api.scratch("omitted-revocation", tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        ids = keri_api.designated_ids(hab.pre)
+        issued = _issue(hab, regery, ids)
+        revoked = assemble.revoke_aliases(hab, regery, issued)
+        credential_log = list(regery.reger.clonePreIter(pre=issued.creder.said, gvrsn=keri_api.V1))
+
+        stream = bytearray(keri_api.kel_bytes(hab))
+        stream.extend(keri_api.tel_bytes(regery, issued.registry.regk))
+        stream.extend(bytes(credential_log[0]))  # the iss, without the rev that follows it
+        stream.extend(keri_api.acdc_bytes(regery, issued.creder))
+        return Fixture(
+            bytes(stream),
+            _facts(
+                "omitted_revocation",
+                hab.pre,
+                acdc_said=issued.creder.said,
+                regk=issued.registry.regk,
+                ids=ids,
+                kel_sn=hab.kever.sner.num,
+                missing=revoked.rev_serder.said,
+            ),
+        )
+
+
+def unpublished_second_credential(tmp_path) -> Fixture:
+    """A valid publication whose controller's KEL also anchors a second registry and credential
+    it is not publishing. Completeness is scoped to the logs a stream presents, so this must
+    publish: a controller may issue more than one credential (constraint ``4f74sjd8``)."""
+    with keri_api.scratch("second-credential", tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        ids = keri_api.designated_ids(hab.pre)
+        issued = _issue(hab, regery, ids)
+        _issue(hab, regery, ids, regname="second", nonce=keri_api.salt(SPARE_REGISTRY_SALT))
+        return Fixture(
+            keri_api.publication_stream(hab, regery, issued.creder),
+            _facts(
+                "unpublished_second_credential",
+                hab.pre,
+                acdc_said=issued.creder.said,
+                regk=issued.registry.regk,
+                ids=ids,
+                kel_sn=hab.kever.sner.num,
+            ),
+        )
+
+
 # ------------------------------------------------------------------------ wrong authorization
 
 
@@ -851,4 +902,6 @@ KNOBS = {
     "deactivated": deactivated,
     "alias_foreign_aid": alias_foreign_aid,
     "endpoints": endpoints,
+    "omitted_revocation": omitted_revocation,
+    "unpublished_second_credential": unpublished_second_credential,
 }

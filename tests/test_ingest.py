@@ -1285,6 +1285,7 @@ REJECTIONS = [
     ("without_acdc", "e.input.missing.alias-acdc.f"),
     ("truncated", "e.input.missing.alias-acdc.f"),
     ("revoked_acdc", "e.state.revoked.alias-acdc.f"),
+    ("omitted_revocation", "e.input.missing.registry.event.f"),
     ("attacker_acdc", "e.grant.missing.alias.f"),
     ("scope_miss", "e.grant.scope.alias.f"),
     ("tampered_sig", "e.proof.stream.sig.f"),
@@ -1345,3 +1346,12 @@ def test_designations_this_method_cannot_read_are_ignored_rather_than_fatal(tmp_
 
     with ingest.ingest(stream, did) as verified:
         assert "did:keri:" + verified.aid in verified.acdc.attrib["ids"]
+
+
+def test_a_controllers_unpublished_credentials_do_not_block_its_publication(tmp_path):
+    """Constraint 4f74sjd8 is scoped to the transaction logs the stream presents: the KEL also
+    anchors a second registry and credential, which this publication does not carry."""
+    stream, facts = fixture("unpublished_second_credential", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert verified.acdc.said == facts["acdc_said"]

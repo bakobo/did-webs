@@ -74,6 +74,7 @@ __all__ = [
     "open_scratch",
     "owned",
     "owns_reply",
+    "require_complete_v1",
     "require_delegator",
     "require_no_third_party",
     "require_ownership",
@@ -841,9 +842,11 @@ def _bound_target(updates, disclosures) -> str | None:
 
 
 def _anchored_registry_events(scratch: Scratch, issuer: str, regid: str) -> set[str]:
-    """SAIDs of every ``regid`` event a seal in ``issuer``'s accepted KEL commits to."""
+    """SAIDs of every event of the transaction log ``regid`` that a seal in ``issuer``'s
+    accepted KEL commits to. Read under the stream's own version; ``regid`` is a v2 registry, or
+    a v1 registry or credential log, whose events are sealed by that identifier."""
     found = set()
-    for msg in scratch.hby.db.clonePreIter(pre=issuer, fn=0, gvrsn=V2):
+    for msg in scratch.hby.db.clonePreIter(pre=issuer, fn=0, gvrsn=scratch.version):
         for seal in serdering.SerderKERI(raw=bytes(msg)).sad.get("a", []):
             if isinstance(seal, dict) and seal.get("i") == regid and "d" in seal:
                 found.add(seal["d"])
@@ -942,6 +945,25 @@ def _schema_valid(schemer, frame: Frame) -> bool:
         return False
 
 
+def require_complete_v1(scratch: Scratch, did, walked: Walk) -> None:
+    """Refuse a v1 stream that omits a transaction event its own KEL anchors (``4f74sjd8``).
+
+    keripy's Tevery judges only the events presented, so a stream that leaves out the ``rev``
+    revoking its designation reads as issued. For every transaction log the stream presents --
+    a registry or a credential -- every event the claimed AID's accepted KEL seals must be in it.
+    Logs the stream does not present are not asked about: a controller may issue credentials it
+    is not publishing.
+
+    Raises:
+        BakoboError: ``e.input.missing.registry.event.f``, naming the first omitted event.
+    """
+    presented = {frame.said for frame in walked.frames if frame.is_tel}
+    for log in sorted({frame.principal for frame in walked.frames if frame.is_tel}):
+        missing = _anchored_registry_events(scratch, did.aid, log) - presented
+        if missing:
+            raise errors.REGISTRY_EVENT_MISSING(aid=did.aid, regid=log, said=min(missing))
+
+
 def audit(scratch: Scratch, did, walked: Walk) -> None:
     """Raise the error the accounting and escrow audits attribute, if the stream earns one.
 
@@ -957,6 +979,8 @@ def audit(scratch: Scratch, did, walked: Walk) -> None:
         vet_registries(scratch, walked)
     for frame in account_frames(scratch, walked):
         raise attribute(scratch, frame)
+    if walked.version == V1:
+        require_complete_v1(scratch, did, walked)
 
 
 # ------------------------------------------------- the authorization post-conditions
@@ -1084,7 +1108,7 @@ def authorize(scratch: Scratch, did, walked: Walk):
     frame = granted[0]
     # Never inferred from the Verifier having saved it: keripy saves revoked credentials by
     # design and says so in a comment (verifying.py, processCredential). SEC-F4.
-    state = scratch.regery.reger.tevers[frame.regid].vcState(vci=frame.said)  # ~3ivm
+    state = scratch.regery.reger.tevers[frame.regid].vcState(vci=frame.said)
     if state is None or state.et in REVOKED_ILKS:
         raise errors.ALIAS_ACDC_REVOKED(said=frame.said)
 
