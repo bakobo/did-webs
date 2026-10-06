@@ -961,8 +961,6 @@ def _schema_valid(schemer, frame: Frame) -> bool:
     """
     if frame.schema != schemer.said:
         return False
-    if frame.serder.sad.get("u") == "":  # a metadata ACDC (ACDC spec-body.md:126, :168)
-        return False
     try:
         return bool(schemer.verify(frame.serder.raw))
     except kering.ValidationError:

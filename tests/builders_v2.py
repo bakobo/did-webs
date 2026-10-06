@@ -533,6 +533,22 @@ def duplicate_disclosure(tmp_path) -> builders.Fixture:
         )
 
 
+def private_acdc(tmp_path) -> builders.Fixture:
+    """A designation carrying a non-empty top-level ``u``: the ACDC spec's private variant, which
+    the public attestation's schema does not admit (35yl884k)."""
+    with keri_api.scratch_v2("private", tmp_path) as (hby, rgy):
+        hab = keri_api.make_hab_v2(hby, "probe")
+        ids = keri_api.designated_ids(hab.pre)
+        hab, issued, stream = _custom_credential(
+            hby, rgy, schema=schemaing.DES_ALIASES_SCHEMA_V2_SAID,
+            attribute={"d": "", "dt": assemble.DESIGNATION_DT, "ids": ids},
+            uuid=keri_api.REGISTRY_UUID,
+        )
+        return builders.Fixture(
+            stream, _facts("private_acdc", hab, issued, "e.proof.stream.frame.f")
+        )
+
+
 def metadata_acdc(tmp_path) -> builders.Fixture:
     """A designation with an empty top-level ``u``: per the ACDC spec a metadata ACDC, a
     commitment to an undisclosed credential, not an attestation (spec-body.md:126, :168)."""
@@ -698,6 +714,7 @@ KNOBS = {
     "null_sn": null_sn,
     "duplicate_disclosure": duplicate_disclosure,
     "metadata_acdc": metadata_acdc,
+    "private_acdc": private_acdc,
     "vacated": vacated,
     "disclosed_on_acdc": disclosed_on_acdc,
     "historical_blinder_lost": historical_blinder_lost,

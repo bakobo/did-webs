@@ -6,8 +6,9 @@ ACDC differs, so anyone can check the derivation instead of trusting the resourc
 
 * ``ri`` (v1 registry identifier) becomes ``rd`` (v2 registry SAID), in the same position;
 * ``t`` (v2 message type) is added and required, fixed to ``acm``;
-* ``u`` (v2 salty nonce) is added and optional, since public mode allows it empty;
-* properties are ordered as a v2 ``acm`` serializes its fields: ``v t d u i rd s a r``;
+* properties are ordered as a v2 ``acm`` serializes its fields: ``v t d i rd s a r``;
+* there is no ``u``, as in v1: any top-level ``u`` makes an ACDC non-public (ACDC spec
+  spec-body.md:126), and this is a public attestation;
 * ``version`` becomes ``2.0.0``.
 
 Everything else -- title, description, credentialType, the attribute and rules blocks,
@@ -27,7 +28,7 @@ SCHEMAS = Path(__file__).resolve().parents[1] / "src" / "didwebs" / "schemas"
 V1 = SCHEMAS / "designated-aliases-public-schema.json"
 V2 = SCHEMAS / "designated-aliases-public-schema-v2.json"
 
-ORDER = ("v", "t", "d", "u", "i", "rd", "s", "a", "r")
+ORDER = ("v", "t", "d", "i", "rd", "s", "a", "r")
 
 
 def derive() -> scheming.Schemer:
@@ -35,14 +36,13 @@ def derive() -> scheming.Schemer:
     props = dict(v1["properties"])
     props["rd"] = props.pop("ri")
     props["t"] = {"description": "Message type", "type": "string", "const": "acm"}
-    props["u"] = {"description": "Salty nonce", "type": "string"}
     assert set(props) == set(ORDER), sorted(props)
 
     v2 = dict(v1)
     v2["$id"] = ""
     v2["version"] = "2.0.0"
     v2["properties"] = {name: props[name] for name in ORDER}
-    v2["required"] = [name for name in ORDER if name != "u"]
+    v2["required"] = list(ORDER)
     return scheming.Schemer(sed=v2, code="E")
 
 

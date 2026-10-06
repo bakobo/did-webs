@@ -113,7 +113,7 @@ def test_the_schema_resource_is_shipped_inside_the_package_not_read_from_the_rep
 
 # ----------------------------------------------------- the proposed v2 schema (35yl884k)
 
-PINNED_V2_SAID = "EDTdIQoJ9snPZ5tOn0EgMYmFmE9pHEUFgQD5W1Y-AGIc"
+PINNED_V2_SAID = "EF9Iy-vwD8GRKghnzHHGwAA6sC0VEWNtZ2Sf4tfd4IAA"
 
 
 def test_the_v2_schema_is_pinned_to_its_said():
@@ -123,15 +123,15 @@ def test_the_v2_schema_is_pinned_to_its_said():
 
 def test_the_v2_schema_differs_from_v1_only_where_a_v2_acdc_does():
     """Decision 35yl884k's derivation, held as an oracle rather than as prose: ``ri`` is renamed
-    ``rd`` in place, ``t`` (required, ``acm``) and ``u`` (optional) are admitted, properties take
-    v2 field order, ``version`` is 2.0.0, and nothing else moves."""
+    ``rd`` in place, ``t`` (required, ``acm``) is admitted, properties take v2 field order,
+    ``version`` is 2.0.0, and nothing else moves. There is no ``u``: a public attestation."""
     v1 = schemaing.read_designated_aliases_schema()
     v2 = schemaing.read_designated_aliases_schema_v2()
 
-    assert list(v2["properties"]) == ["v", "t", "d", "u", "i", "rd", "s", "a", "r"]
+    assert list(v2["properties"]) == ["v", "t", "d", "i", "rd", "s", "a", "r"]
     assert v2["properties"]["rd"] == v1["properties"]["ri"]
     assert v2["properties"]["t"]["const"] == "acm"
-    assert "u" not in v2["required"]
+    assert "u" not in v2["properties"]
     assert v2["required"] == ["v", "t", "d", "i", "rd", "s", "a", "r"]
     assert v2["version"] == "2.0.0"
     for field in ("v", "d", "i", "s", "a", "r"):
@@ -155,7 +155,7 @@ def test_a_mutated_v2_schema_is_refused_naming_the_v2_pin(monkeypatch):
 def test_the_v1_schema_does_not_validate_a_v2_shaped_body_and_the_v2_one_does():
     """Why a second schema exists at all: v1 requires ``ri`` and forbids ``u``/``t``."""
     body = {
-        "v": "ACDCCAACAAJSONAAAA.", "t": "acm", "d": "", "u": "", "i": "E" * 44,
+        "v": "ACDCCAACAAJSONAAAA.", "t": "acm", "d": "", "i": "E" * 44,
         "rd": "E" * 44, "s": PINNED_V2_SAID,
         "a": {"d": "", "dt": "2026-10-06T00:00:00.000000+00:00", "ids": []},
         "r": schemaing.read_designated_aliases_rules(),
@@ -165,3 +165,17 @@ def test_the_v1_schema_does_not_validate_a_v2_shaped_body_and_the_v2_one_does():
     with pytest.raises(ValidationError):  # keripy's verify raises rather than returning False
         schemaing.load_designated_aliases_schema().verify(raw)
     assert schemaing.load_designated_aliases_schema_v2().verify(raw)
+
+
+def test_the_v2_schema_refuses_any_top_level_u():
+    """A public attestation (35yl884k): an empty u is a metadata ACDC, a non-empty one private."""
+    schemer = schemaing.load_designated_aliases_schema_v2()
+    for u in ("", "0AAxyzNonceNonceNonceNon"):
+        body = {
+            "v": "ACDCCAACAAJSONAAAA.", "t": "acm", "d": "", "u": u, "i": "E" * 44,
+            "rd": "E" * 44, "s": PINNED_V2_SAID,
+            "a": {"d": "", "dt": "2026-10-06T00:00:00.000000+00:00", "ids": []},
+            "r": schemaing.read_designated_aliases_rules(),
+        }
+        with pytest.raises(ValidationError):
+            schemer.verify(json.dumps(body).encode())
