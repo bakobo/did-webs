@@ -42,10 +42,10 @@ RESOURCE_DIR = "schemas"
 SCHEMA_RESOURCE = "designated-aliases-public-schema.json"
 
 #: SAID of the v2 Designated Aliases Public Attestation schema: v1's with ``ri`` renamed ``rd`` and
-#: ``u``/``t`` admitted, derived by ``tools/mint-v2-aliases-schema``. PROPOSED, not standardized:
+#: ``t`` admitted, and like v1 no ``u``, derived by ``tools/mint-v2-aliases-schema``. PROPOSED, not standardized:
 #: the did:webs spec names no schema for either version, so this one is ours until the community
 #: adopts it or another (decision ``35yl884k``).
-DES_ALIASES_SCHEMA_V2_SAID = "EDTdIQoJ9snPZ5tOn0EgMYmFmE9pHEUFgQD5W1Y-AGIc"
+DES_ALIASES_SCHEMA_V2_SAID = "EF9Iy-vwD8GRKghnzHHGwAA6sC0VEWNtZ2Sf4tfd4IAA"
 
 SCHEMA_V2_RESOURCE = "designated-aliases-public-schema-v2.json"
 RULES_RESOURCE = "desig-aliases-public-schema-rules.json"

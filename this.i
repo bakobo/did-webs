@@ -598,12 +598,16 @@ Production did:webs implementation on KERI = goal:
             A v2 ACDC cannot validate against the pinned v1 schema EN6Oh5…: that schema requires
             `ri`, and v2 carries `rd`, `u` and `t`. The exact derivation, since anyone
             re-deriving it from prose must reach the same SAID (panel SPC-F3): from v1, `ri`
-            becomes `rd` with v1's definition; `t` is added, required, `const: acm`; `u` is
-            added, optional; properties are ordered v t d u i rd s a r and `required` follows
-            that order without `u`; `version` becomes 2.0.0; nothing else changes
-            (tools/mint-v2-aliases-schema). The credential itself omits top-level `u`: the ACDC
-            spec makes an absent `u` the public variant and an empty one a metadata ACDC
-            (spec-body.md:126, :168; panel PRV-F1). The did:webs spec names no schema at all —
+            becomes `rd` with v1's definition; `t` is added, required, `const: acm`; properties
+            are ordered v t d i rd s a r and `required` follows that order; `version` becomes
+            2.0.0; nothing else changes (tools/mint-v2-aliases-schema). There is no `u`, as there
+            is none in v1: the ACDC spec makes an absent top-level `u` the public variant, an
+            empty one a metadata ACDC and a non-empty one a private one (spec-body.md:126,
+            :168), and this is the Designated Aliases *Public* Attestation, so the schema itself
+            refuses `u` and every implementation that validates against it does too. An earlier
+            draft admitted `u` as optional and left ingest to refuse the empty case; Copilot and
+            the hostile pass on PR #11 both showed a non-empty `u` then passed, and a rule that
+            lives only in one implementation is not one the community inherits. The did:webs spec names no schema at all —
             EN6Oh5… is the GLEIF reference implementation's — so someone must mint the v2 one,
             and a schema SAID is a one-way door once it is in a deployed resolver. Daniel
             decided 2026-10-06: we mint it as the v1 schema with ri renamed rd and u and t
