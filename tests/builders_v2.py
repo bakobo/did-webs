@@ -220,7 +220,7 @@ def mixed_versions(tmp_path) -> builders.Fixture:
     return builders.Fixture(fixture.stream + v1.stream, facts)
 
 
-def _custom_credential(hby, rgy, *, schema, attribute):
+def _custom_credential(hby, rgy, *, schema, attribute, uuid=None):
     """A v2 registry whose disclosed head binds an ``acm`` the caller shapes: the way to put a
     credential that is not a valid designation behind a registry that is otherwise valid."""
     hab = keri_api.make_hab_v2(hby, "controller")
@@ -232,7 +232,7 @@ def _custom_credential(hby, rgy, *, schema, attribute):
     assemble._anchor_v2(hab, registry, rip)
     acdc = acdcmap(
         israid=hab.pre, regid=registry.regk, schema=schema, attribute=attribute,
-        rule=schemaing.read_designated_aliases_rules(), uuid="", pvrsn=V2, gvrsn=V2,
+        rule=schemaing.read_designated_aliases_rules(), uuid=uuid, pvrsn=V2, gvrsn=V2,
     )
     blinder, bup = registrar.issue(
         registry, acdc=acdc, state="issued", salt=keri_api.BLIND_SALT,
@@ -518,6 +518,36 @@ def null_sn(tmp_path) -> builders.Fixture:
     return builders.Fixture(fixture.stream + forged.raw, facts)
 
 
+def duplicate_disclosure(tmp_path) -> builders.Fixture:
+    """The head update's disclosure attached twice, once on the update and again on the ACDC.
+    keripy's vetBinds requires exactly one matching disclosure and refuses this; so do we."""
+    with keri_api.scratch_v2("duplicate", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        acdc = messagize(issued.acdc, bonds=[issued.blinder.data], framed=False, gvrsn=V2)
+        stream = (
+            GENUS + _kel(hab) + bytes(acdc)
+            + assemble.registry_v2_bytes(issued.rip, issued.bups, issued.blinders)
+        )
+        return builders.Fixture(
+            stream, _facts("duplicate_disclosure", hab, issued, "e.proof.stream.disclosure.f")
+        )
+
+
+def metadata_acdc(tmp_path) -> builders.Fixture:
+    """A designation with an empty top-level ``u``: per the ACDC spec a metadata ACDC, a
+    commitment to an undisclosed credential, not an attestation (spec-body.md:126, :168)."""
+    with keri_api.scratch_v2("metadata", tmp_path) as (hby, rgy):
+        hab = keri_api.make_hab_v2(hby, "probe")
+        ids = keri_api.designated_ids(hab.pre)
+        hab, issued, stream = _custom_credential(
+            hby, rgy, schema=schemaing.DES_ALIASES_SCHEMA_V2_SAID,
+            attribute={"d": "", "dt": assemble.DESIGNATION_DT, "ids": ids}, uuid="",
+        )
+        return builders.Fixture(
+            stream, _facts("metadata_acdc", hab, issued, "e.proof.stream.frame.f")
+        )
+
+
 def vacated(tmp_path) -> builders.Fixture:
     """The designation issued, then a vacuous update (keripy's ``Registrar.vacate``) as head.
     keripy reads the state as the latest non-vacuous update's, so this publishes as issued
@@ -666,6 +696,8 @@ KNOBS = {
     "bare_seal_omitted_revocation": bare_seal_omitted_revocation,
     "malformed_seal_data": malformed_seal_data,
     "null_sn": null_sn,
+    "duplicate_disclosure": duplicate_disclosure,
+    "metadata_acdc": metadata_acdc,
     "vacated": vacated,
     "disclosed_on_acdc": disclosed_on_acdc,
     "historical_blinder_lost": historical_blinder_lost,

@@ -92,14 +92,14 @@ def messages(stream: bytes) -> list:
     return found
 
 
-def disclosures(found: list) -> dict:
-    """Every blinded-state disclosure carried anywhere in the stream, keyed by its BLID."""
-    out = {}
-    for message in found:
-        for bsq in getattr(message, "bsqs", None) or []:
-            blinder = Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in bsq))
-            out.setdefault(blinder.said, blinder)
-    return out
+def disclosures(found: list) -> list:
+    """Every blinded-state disclosure carried anywhere in the stream, each occurrence kept, so
+    upstream's exactly-one rule sees duplicates and refuses them as it would."""
+    return [
+        Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in bsq))
+        for message in found
+        for bsq in getattr(message, "bsqs", None) or []
+    ]
 
 
 def latest_target(updates: list, blinders: list) -> str:
@@ -141,7 +141,7 @@ def vet_all(stream: bytes, *, name: str = "upstream-oracle") -> list[dict]:
             # Upstream's issuer-registry reading (vetBinds, as keripy's own IPEX binds issuer
             # registries): every disclosure in the stream, matched by BLID; the state is the
             # latest non-vacuous update's. A registry with no updates has no binding to read.
-            blinders = list(disclosures(found).values())
+            blinders = disclosures(found)
             if updates:
                 target = latest_target([m.serder for m in updates], blinders)
                 record = regeventing.vetBinds(

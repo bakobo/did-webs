@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import keri_api
 import pytest
+from bakobo.errors import BakoboError
 from keri.acdc import regeventing
 from keri.app import habbing
 from keri.core import Blinder, BlindState, counting, serdering
@@ -164,8 +165,9 @@ def test_v2_issuance_refuses_a_v1_controller(tmp_path):
     the source rather than published and refused at ingest."""
     with keri_api.scratch_v2("issuer", tmp_path) as (hby, rgy):
         hab = keri_api.make_hab(hby, "controller")  # v1
-        with pytest.raises(ValueError, match="protocol v2"):
+        with pytest.raises(BakoboError) as caught:
             assemble.issue_aliases_v2(hab, rgy, keri_api.designated_ids(hab.pre))
+    assert caught.value.code == "e.rule.stream.version.f"
 
 
 def test_the_keystore_stream_is_not_a_serder_dump(tmp_path):
@@ -184,5 +186,6 @@ def test_an_anchor_keripy_will_not_commit_stops_issuance(tmp_path, monkeypatch):
     monkeypatch.setattr(registraring.Registry, "anchorMsg", lambda self, said, **_: False)
     with keri_api.scratch_v2("issuer", tmp_path) as (hby, rgy):
         hab = keri_api.make_hab_v2(hby, "controller")
-        with pytest.raises(RuntimeError, match="did not commit"):
+        with pytest.raises(BakoboError) as caught:
             assemble.issue_aliases_v2(hab, rgy, keri_api.designated_ids(hab.pre))
+    assert caught.value.code == "e.self.anchor.registry.f"

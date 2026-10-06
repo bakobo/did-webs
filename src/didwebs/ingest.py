@@ -810,20 +810,20 @@ class VettedRegistry:
 _ANCHOR_FAULTS = (kering.MissingAnchorError, kering.MisanchorError, kering.RootSealError)
 
 
-def _disclosures(walked: Walk) -> dict:
-    """Every blinded-state disclosure the stream carries, keyed by the BLID it discloses.
+def _disclosures(walked: Walk) -> list:
+    """Every blinded-state disclosure the stream carries, each occurrence kept.
 
     A disclosure is a BlindedStateQuadruples block, and the ACDC spec lets it ride on any
     message, the update itself or the ACDC (spec-body.md:2062), several to a group. So they are
-    collected from every frame and matched to updates by BLID, as keripy's ``vetBinds`` matches
-    them. The same disclosure attached twice is one disclosure.
+    collected from every frame and handed to keripy's ``vetBinds``, which matches them to updates
+    by BLID and requires exactly one per update it reads. Duplicates are kept so that it can
+    refuse them as it would for anyone else.
     """
-    found = {}
-    for frame in walked.frames:
-        for crew in frame.disclosures:
-            blinder = Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in crew))
-            found.setdefault(blinder.said, blinder)
-    return found
+    return [
+        Blinder(clan=BlindState, qb64=b"".join(item.qb64b for item in crew))
+        for frame in walked.frames
+        for crew in frame.disclosures
+    ]
 
 
 def _bound_target(updates, disclosures) -> str | None:
@@ -911,7 +911,8 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
     """
     tels = [frame for frame in walked.frames if frame.proto == ACDC and frame.is_tel]
     credentials = {frame.said: frame for frame in walked.frames if frame.is_acdc}
-    disclosures = _disclosures(walked)
+    occurrences = _disclosures(walked)
+    disclosures = {blinder.said: blinder for blinder in occurrences}  # lookup only
     schemer = schemaing.load_designated_aliases_schema_v2()
 
     for rip in (frame for frame in tels if frame.ilk == REGISTRY_V2_INCEPTION):
@@ -927,7 +928,7 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
                     rip.serder,
                     [update.serder for update in updates],
                     db=scratch.hby.db,
-                    blinders=list(disclosures.values()),
+                    blinders=occurrences,
                     target=target or "",
                     acdc=bound.serder if bound is not None else None,
                 )
@@ -972,6 +973,8 @@ def _schema_valid(schemer, frame: Frame) -> bool:
     is not one this build can accept.
     """
     if frame.schema != schemer.said:
+        return False
+    if frame.serder.sad.get("u") == "":  # a metadata ACDC (ACDC spec-body.md:126, :168)
         return False
     try:
         return bool(schemer.verify(frame.serder.raw))

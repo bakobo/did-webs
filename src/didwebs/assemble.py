@@ -285,10 +285,7 @@ class IssuedV2:
 def _require_v2(hab: habbing.Hab) -> None:
     """Refuse a v1 controller: one stream is one version (decision ``8686h4tf``)."""
     if hab.kever.serder.pvrsn != V2:
-        raise ValueError(
-            f"{hab.pre} keeps a protocol {hab.kever.serder.pvrsn.major} key event log; a v2 "
-            "registry must be anchored in a protocol v2 one"
-        )
+        raise errors.STREAM_VERSION_MIXED(aid=hab.pre, version=hab.kever.serder.pvrsn.major)
 
 
 def _anchor_v2(hab: habbing.Hab, registry, serder) -> None:
@@ -296,7 +293,7 @@ def _anchor_v2(hab: habbing.Hab, registry, serder) -> None:
     seal = {"i": registry.regk, "s": serder.sad["n"], "d": serder.said}
     hab.interact(data=[seal], version=V2, gvrsn=V2)
     if not registry.anchorMsg(serder.said):
-        raise RuntimeError(f"keripy did not commit registry event {serder.said} after anchoring")
+        raise errors.REGISTRY_ANCHOR_UNCOMMITTED(said=serder.said)
 
 
 def issue_aliases_v2(
