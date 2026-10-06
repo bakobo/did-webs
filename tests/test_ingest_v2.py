@@ -62,9 +62,8 @@ def test_every_frame_of_a_valid_v2_publication_is_accounted(tmp_path):
 def test_the_v2_negative_matrix_attributes_the_exact_code(knob, tmp_path):
     stream, facts = builders_v2.KNOBS[knob](tmp_path)
 
-    with pytest.raises(BakoboError) as caught:
-        with ingest.ingest(stream, _claimed(facts)):
-            pass
+    with pytest.raises(BakoboError) as caught, ingest.ingest(stream, _claimed(facts)):
+        pass
 
     assert caught.value.code == facts["expected_code"]
 
@@ -75,9 +74,9 @@ def test_a_v1_stream_carrying_v2_frames_is_refused_as_a_format_fault(tmp_path):
     v1 = builders_v2.builders.base(tmp_path / "v1")
     v2 = builders_v2.base(tmp_path / "v2")
 
-    with pytest.raises(BakoboError) as caught:
-        with ingest.ingest(v1.stream + v2.stream[len(builders_v2.GENUS) :], _claimed(v1.facts)):
-            pass
+    mixed = v1.stream + v2.stream[len(builders_v2.GENUS) :]
+    with pytest.raises(BakoboError) as caught, ingest.ingest(mixed, _claimed(v1.facts)):
+        pass
 
     assert caught.value.code == "e.input.format.stream.f"
 
