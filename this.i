@@ -540,10 +540,14 @@ Production did:webs implementation on KERI = goal:
             state cannot be read cannot authorize a publication. The ACDC spec defines exactly
             this case: "the issuer attaches the associated expanded blinded attribute block to
             any publication of a Blindable-Update bup event" (kswg-acdc-specification
-            spec-body.md:2367 at f0bd097), as a BlindedStateQuadruples (-a) group (:2062), with
+            spec-body.md:2367 at f0bd097, under "Public Unblinded Blindable Example"), as a BlindedStateQuadruples (-a) group (:2062), with
             the UUID allowed empty in public mode (:2075). So: every published bup carries its
             -a disclosure, keri.acdc.regeventing.vet checks it against the bup's BLID, and a bup
-            without one is refused as unprovable, as is any `upd`. Revocation is the disclosed
+            without one is refused as unprovable. `upd` is refused too, and this is where the
+            two authorities disagree: the ACDC spec still lists it ("non-blindable transaction
+            event state update", spec-body.md:1960) while WebOfTrust keripy main dropped it
+            (regeventing.py:121). 0plkq8s8 takes what both accept, and the spec proposal names
+            the disagreement rather than resolving it here. Revocation is the disclosed
             `ts` reading anything other than `issued`; vet assigns `ts` no meaning
             (regeventing.py:625-646), so the policy is ours and fails closed. keripy's Parser
             refuses every non-null-ilk ACDC message (parsing.py msgProcess), so these frames are
