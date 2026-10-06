@@ -36,11 +36,11 @@ from dataclasses import dataclass
 
 from hio.base import doing
 from hio.help import decking
+from keri.acdc import Registrar, acdcmap
 from keri.app import grouping, habbing
 from keri.core import coring, counting, eventing, serdering
-from keri.db.dbing import fetchTsgs
-from keri.acdc import Registrar, acdcmap
 from keri.core.eventing import messagize
+from keri.db.dbing import fetchTsgs
 from keri.kering import Vrsn_1_0, Vrsn_2_0
 from keri.vdr import credentialing, verifying
 from keri.vdr.eventing import (

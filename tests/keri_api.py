@@ -35,6 +35,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from keri import acdc as acdcing
 from keri import core, kering
 from keri.app import habbing
 from keri.app.habbing import openHby
@@ -43,7 +44,6 @@ from keri.core.parsing import Parser
 from keri.db import dbing
 from keri.kering import Vrsn_1_0, Vrsn_2_0
 from keri.vdr import credentialing
-from keri import acdc as acdcing
 
 from didwebs import assemble
 
