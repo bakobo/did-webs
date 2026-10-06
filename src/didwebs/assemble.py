@@ -23,7 +23,8 @@ entry points take no version argument at all and derive it instead:
 
 For those three the pin is asserted rather than passed: :func:`_v1` checks the derived version
 immediately, so a keripy change that flips the derivation fails here rather than downstream in
-a stream nobody can read. (``signing.serialize`` hardcodes v1 internally and needs neither.)
+a stream nobody can read. (``signing.serialize`` is not called: it derives the genus from keripy's global
+default, so :func:`serialize_v1` reproduces its v1 form instead — decision ``66g4hfd2``.)
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ from dataclasses import dataclass
 
 from hio.base import doing
 from hio.help import decking
-from keri.app import grouping, habbing, signing
+from keri.app import grouping, habbing
 from keri.core import coring, counting, eventing, serdering
 from keri.db.dbing import fetchTsgs
 from keri.kering import Vrsn_1_0
@@ -126,6 +127,26 @@ class _Issuance:
         self.doist.recur(deeds=self.deeds + decking.deque([]))
         self.verifier.processEscrows()
         self.regery.processEscrows()
+
+
+def serialize_v1(creder, prefixer, seqner, saider) -> bytes:
+    """An ACDC with its v1 source-seal triple attached, byte-identical to keripy 366d810's
+    ``signing.serialize`` (decision ``66g4hfd2``).
+
+    From 6f95d314 keripy's ``serialize`` delegates to ``messagize(gvrsn=Version)`` with no way to
+    pass the version, which would flip the attachment to a v2-genus SealSourceCouples — a change
+    to the wire format the deployed ecosystem reads, where this keeps it exactly as it was.
+
+    ``seqner`` may arrive as a ``Number`` in keripy's compact ``M`` encoding, which is how the
+    credential store keeps some anchors from 6f95d314 on. A v1 triple carries a fixed-size ``0A``
+    Seqner, so the encoding is re-derived from the ordinal, never copied.
+    """
+    craw = bytearray(creder.raw)
+    craw.extend(counting.Counter(counting.Codens.SealSourceTriples, count=1, version=V1).qb64b)
+    craw.extend(prefixer.qb64b)
+    craw.extend(coring.Seqner(sn=seqner.sn).qb64b)
+    craw.extend(saider.qb64b)
+    return bytes(craw)
 
 
 def _anchor(hab: habbing.Hab, serder) -> serdering.SerderKERI:
@@ -233,11 +254,11 @@ def _reply_bytes(db, said: str) -> bytes:
 def _tel_bytes(reger, pre: str) -> bytes:
     """Clone a transaction event log — a registry's or a credential's — from accepted state.
 
-    ``Reger.clonePreIter`` takes no genus argument on this keripy line; it emits v1 attachment
-    counters unconditionally (``keri/vdr/eventing.py``, ``cloneTvt``).
+    ``Reger.clonePreIter`` takes a genus that defaults to v2 on this keripy line, so it is pinned
+    like every other replay call (constraint ``qbqfst``, shape (a)).
     """
     msgs = bytearray()
-    for msg in reger.clonePreIter(pre=pre):
+    for msg in reger.clonePreIter(pre=pre, gvrsn=V1):
         msgs.extend(msg)
     return bytes(msgs)
 
@@ -389,7 +410,7 @@ def emit_stream(verified) -> bytes:
     for creder in creders:
         msgs.extend(_tel_bytes(reger, creder.said))
         prefixer, seqner, saider = reger.cancs.get(keys=(creder.said,))
-        msgs.extend(signing.serialize(creder, prefixer, seqner, saider))
+        msgs.extend(serialize_v1(creder, prefixer, seqner, saider))
 
     return bytes(msgs)
 
@@ -408,7 +429,7 @@ def keystore_stream(hab: habbing.Hab, regery: credentialing.Regery, creder) -> b
     msgs.extend(_tel_bytes(regery.reger, creder.regid))
     msgs.extend(_tel_bytes(regery.reger, creder.said))
     prefixer, seqner, saider = regery.reger.cancs.get(keys=(creder.said,))
-    msgs.extend(signing.serialize(creder, prefixer, seqner, saider))
+    msgs.extend(serialize_v1(creder, prefixer, seqner, saider))
     return bytes(msgs)
 
 

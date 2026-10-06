@@ -36,13 +36,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keri import core, kering
-from keri.app import habbing, signing
+from keri.app import habbing
 from keri.app.habbing import openHby
 from keri.core import coring, serdering
 from keri.core.parsing import Parser
 from keri.db import dbing
 from keri.kering import Vrsn_1_0
 from keri.vdr import credentialing
+
+from didwebs import assemble
 
 #: The protocol version every event in a didwebs fixture carries. Never omit it.
 V1 = Vrsn_1_0
@@ -212,11 +214,10 @@ def kel_bytes(hab: habbing.Hab, *, with_delegator: bool = True) -> bytes:
 def tel_bytes(regery: credentialing.Regery, pre: str) -> bytes:
     """Clone a TEL (registry or credential) as CESR bytes.
 
-    ``Reger.clonePreIter`` takes no genus argument on this line; it emits v1 attachment
-    counters unconditionally (``keri/vdr/eventing.py`` ``cloneTvt``).
+    ``Reger.clonePreIter`` takes a genus that defaults to v2 on this line, so it is pinned.
     """
     msgs = bytearray()
-    for msg in regery.reger.clonePreIter(pre=pre):
+    for msg in regery.reger.clonePreIter(pre=pre, gvrsn=V1):
         msgs.extend(msg)
     return bytes(msgs)
 
@@ -224,11 +225,11 @@ def tel_bytes(regery: credentialing.Regery, pre: str) -> bytes:
 def acdc_bytes(regery: credentialing.Regery, creder) -> bytes:
     """Serialize an ACDC with its source-seal attachment, as a publication stream carries it.
 
-    ``signing.serialize`` hardcodes ``Vrsn_1_0`` for the attachment counter on this line
-    (``keri/app/signing.py:14``), so there is no version to pin here.
+    Through :func:`didwebs.assemble.serialize_v1`, not ``signing.serialize``, which derives the
+    genus from keripy's global default (decision ``66g4hfd2``).
     """
     prefixer, seqner, saider = regery.reger.cancs.get(keys=(creder.said,))
-    return bytes(signing.serialize(creder, prefixer, seqner, saider))
+    return assemble.serialize_v1(creder, prefixer, seqner, saider)
 
 
 def registry_id(creder) -> str:

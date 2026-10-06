@@ -10,18 +10,13 @@ dependencies = [
     # The estate pin (this.i decisions gvimca/qbqfst). Public repo, plain HTTPS: anonymous
     # resolution needs no credential, in a fresh clone or in CI.
     #
-    # The estate does NOT hold one commit in common, and gvimca permits that ("possibly two
-    # keripy versions across bakobo repos, with the mismatch documented rather than hidden").
-    # As of 2026-08-28: witness pins this same commit; heti pins f663ecd, which is NOT on
-    # `stack` or `main` but on `feat/keyalg-on-stack`. We deliberately do not follow heti onto
-    # an unmerged feature branch — didwebs is Ed25519-only (decision 3woefn), so that work is
-    # dead weight here.
-    #
-    # Bumping to `bakobo/stack` head (03f7d2d3) was ATTEMPTED 2026-08-28 and reverted: it breaks
-    # the qbqfst pin and changes our published wire format. See tick ~3vol for the diagnosis.
+    # 6f95d314 is sedi-substrate-v3, the commit heti pins (decision 66g4hfd2). It replaced
+    # 366d810 on 2026-10-06 with the v1 wire format unchanged: assemble builds the ACDC's v1
+    # source-seal triple itself because keripy's signing.serialize no longer can. The estate
+    # need not hold one commit in common (gvimca); witness pins its own fork-only commit.
     # Any future bump must re-run the cross-implementation oracle (tests/crossimpl), which is
     # the only thing that checks the interop half of gvimca.
-    "keri @ git+https://github.com/bakobo/keripy@366d81071aea7be5b8ad35acbed815e1255224d5",
+    "keri @ git+https://github.com/bakobo/keripy@6f95d31487874a3c426ea06d470c268bf5997561",
     # The shared ErrorCode/BakoboError machinery didwebs/errors.py is built on. Public repo,
     # plain HTTPS for the same reason as keri above.
     "bakobo-errors @ git+https://github.com/bakobo/errors@45f42ae4259cce144fe1d668c9c176d869c3023a",

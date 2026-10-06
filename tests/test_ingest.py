@@ -829,19 +829,18 @@ def test_a_recovered_stream_publishes_with_the_post_rotation_key_state(tmp_path)
         assert kever.serder.said == facts["superseding_said"]
 
 
-def test_the_likely_duplicitous_escrow_is_dead_on_this_keripy_line(tmp_path):
-    """A defect record, not a preference. ``Kevery.escrowLDEvent`` calls ``self.db.addLde``, and
-    ``Baser`` at the estate pin defines no such method: the ``AttributeError`` surfaces as
-    "No kevery to process so dropped msg" and the Parser swallows it. ``db.ldes`` therefore never
-    fills, which is why the duplicity audit reads the accepted key event log as well.
+def test_a_forked_submission_lands_in_the_likely_duplicitous_escrow(tmp_path):
+    """The escrow leg of the duplicity audit is live at this pin (tick ``~3v45``).
 
-    Delete this test — and the accounting-side half of :func:`ingest.duplicitous` — when the pin
-    moves to a keripy that defines ``addLde``.
+    Until 6f95d314, ``Kevery.escrowLDEvent`` called a ``db.addLde`` that ``Baser`` never defined,
+    so a forked event vanished and only the accepted-KEL scan in :func:`ingest.duplicitous` saw
+    it. This holds keripy to the repair: the losing branch of a fork is escrowed, not dropped.
     """
     stream, _ = fixture("forked_kel", tmp_path)
+    divergent = ingest.walk(stream).frames[-1]  # the fixture appends the losing branch last
 
     with loaded(stream) as scratch:
-        assert scratch.escrow_saids("ldes") == set()
+        assert scratch.escrow_saids("ldes") == {divergent.said}
 
 
 def test_the_duplicity_audit_reads_the_likely_duplicitous_escrow_too(tmp_path):
