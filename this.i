@@ -511,6 +511,14 @@ Production did:webs implementation on KERI = goal:
         consequence. Accepted tradeoff: streams our own estate produces today (heti's `upd`
         chains) are refused here until their producer moves to `bup`. The v1 path is unchanged
         and qbqfst still governs it; for v2 streams the same per-call pin applies with V2.
+
+        The rule governs what a stream MEANS, not how keripy's extractor happens to frame it.
+        keripy cannot extract an attachment-less final frame (tick ~3rz6, in the fork and in
+        main alike), so ingest reads such a frame whole rather than refusing a stream whose
+        meaning the reference verifier accepts; our own output never relies on this, ending on
+        an attached update. This tolerance retires when keripy's extractor is fixed. An empty
+        attachment group (-CAA) after an attachment-less frame is refused, as keripy refuses
+        it (panel CSR-F1, SKP-F4).
       children:
 
         The version is read from the stream, and one stream is one version = decision:
@@ -541,29 +549,52 @@ Production did:webs implementation on KERI = goal:
             this case: "the issuer attaches the associated expanded blinded attribute block to
             any publication of a Blindable-Update bup event" (kswg-acdc-specification
             spec-body.md:2367 at f0bd097, under "Public Unblinded Blindable Example"), as a BlindedStateQuadruples (-a) group (:2062), with
-            the UUID allowed empty in public mode (:2075). So: every published bup carries its
-            -a disclosure, keri.acdc.regeventing.vet checks it against the bup's BLID, and a bup
-            without one is refused as unprovable. `upd` is refused too, and this is where the
-            two authorities disagree: the ACDC spec still lists it ("non-blindable transaction
-            event state update", spec-body.md:1960) while WebOfTrust keripy main dropped it
-            (regeventing.py:121). 0plkq8s8 takes what both accept, and the spec proposal names
-            the disagreement rather than resolving it here. Revocation is the disclosed
-            `ts` reading anything other than `issued`; vet assigns `ts` no meaning
-            (regeventing.py:625-646), so the policy is ours and fails closed. keripy's Parser
-            refuses every non-null-ilk ACDC message (parsing.py msgProcess), so these frames are
-            never processed by a Tevery or Verifier: they are walked, vetted against the KEL
-            the parser accepted, and counted accepted only by that vetting. Rejected publishing
-            the issuer's salt instead of per-event disclosures: vet takes "no salt parameter:
-            only the per-event disclosure is accepted" (regeventing.py:558-562), and a salt
-            would also unblind every future event. Accepted tradeoff: an issuer must keep each
-            bup's blinder (keripy returns it from Registrar.issue and persists nothing), or
-            derive it from a salt it is willing to make public.
+            the UUID allowed empty in public mode (:2075). Which disclosures are required, and
+            how state is read, follows keripy's own issuer-registry verifier, vetBinds
+            (keri/acdc/regeventing.py, used by keripy's IPEX at ipexing.py:1372), not vet alone:
+            disclosures are matched to updates by BLID wherever the stream carries them (on the
+            bup, or grouped on the ACDC, as spec-body.md:2062 allows), every update from the head
+            back to the latest non-vacuous one needs exactly one, and the state is that latest
+            non-vacuous update's. An earlier draft read the head alone and demanded a disclosure
+            on every bup; the 2026-10-06 KERI panel (GOV-F1, SKP-F1, SPC-F2) showed both diverge
+            from keripy -- a vacated head (Registrar.vacate) was refused, and an issuer who lost
+            one historical blinder could never republish. Revocation is the bound state reading
+            anything but `issued`; keripy assigns `ts` no meaning, so that policy is ours and
+            fails closed. `upd` is refused, and this is where the two authorities disagree: the
+            ACDC spec still lists it ("non-blindable transaction event state update",
+            spec-body.md:1960) while WebOfTrust keripy main dropped it (regeventing.py:121).
+            0plkq8s8 takes what both accept, and the spec proposal names the disagreement.
+
+            Completeness, which neither verifier checks: every registry event the issuer's
+            accepted KEL anchors must be in the stream (e.input.missing.registry.event.f). vet
+            and vetBinds are evidence-only by design and verify what is presented, so a stream
+            that omits a revoking bup its own KEL seals would otherwise publish the designation
+            as issued (panel SEC-F1, reproduced). The KEL is evidence already in hand, so this
+            fetches nothing. The same gap exists in the v1 path and is recorded separately.
+
+            keripy's Parser refuses every non-null-ilk ACDC message (parsing.py msgProcess), so
+            these frames never reach a Tevery or Verifier: they are walked, vetted against the
+            KEL the parser accepted, and counted accepted only by that vetting. Rejected
+            publishing the issuer's salt instead of per-event disclosures: vet takes "no salt
+            parameter: only the per-event disclosure is accepted" (regeventing.py:558-562), and a
+            salt would also unblind every future event. Accepted tradeoff: an issuer must keep the
+            blinders back to its latest non-vacuous update (keripy returns them from
+            Registrar.issue and persists none), and must not reuse a blinding salt across
+            registries, since keripy derives each UUID from the salt and the sequence number
+            alone (panel PRV-F2).
 
         The v2 designated-aliases schema is ours, marked proposed = decision:
           nid: 35yl884k
           why: >
             A v2 ACDC cannot validate against the pinned v1 schema EN6Oh5…: that schema requires
-            `ri`, and v2 carries `rd`, `u` and `t`. The did:webs spec names no schema at all —
+            `ri`, and v2 carries `rd`, `u` and `t`. The exact derivation, since anyone
+            re-deriving it from prose must reach the same SAID (panel SPC-F3): from v1, `ri`
+            becomes `rd` with v1's definition; `t` is added, required, `const: acm`; `u` is
+            added, optional; properties are ordered v t d u i rd s a r and `required` follows
+            that order without `u`; `version` becomes 2.0.0; nothing else changes
+            (tools/mint-v2-aliases-schema). The credential itself omits top-level `u`: the ACDC
+            spec makes an absent `u` the public variant and an empty one a metadata ACDC
+            (spec-body.md:126, :168; panel PRV-F1). The did:webs spec names no schema at all —
             EN6Oh5… is the GLEIF reference implementation's — so someone must mint the v2 one,
             and a schema SAID is a one-way door once it is in a deployed resolver. Daniel
             decided 2026-10-06: we mint it as the v1 schema with ri renamed rd and u and t
