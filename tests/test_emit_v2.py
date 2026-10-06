@@ -88,9 +88,9 @@ def test_publish_detects_v2_and_writes_both_artifacts(tmp_path, capsys):
                      "--out", str(out)]) == 0
 
     did_json, keri_cesr = (line for line in capsys.readouterr().out.splitlines())
-    hosted = json.loads(open(did_json, encoding="utf-8").read())
+    hosted = json.loads(pathlib.Path(did_json).read_text(encoding="utf-8"))
     assert hosted["id"] == facts["did_web"]
-    with ingest.ingest(open(keri_cesr, "rb").read(), _claimed(facts)) as again:
+    with ingest.ingest(pathlib.Path(keri_cesr).read_bytes(), _claimed(facts)) as again:
         assert again.version == keri_api.V2
 
 
