@@ -333,7 +333,7 @@ def walk(stream: bytes) -> Walk:
             message = done.value
             try:
                 frames.append(_frame(message.serder, message.sigers, message.bsqs))
-            except ValueError:  # e.g. a SAID-valid registry event whose `n` is not hex
+            except (ValueError, TypeError):  # a SAID-valid registry event whose `n` is not hex
                 failure = WalkFailure(fault="format")
                 break
         except ShortageError:
@@ -343,7 +343,7 @@ def walk(stream: bytes) -> Walk:
             else:
                 try:
                     frames.append(_frame(last, ()))
-                except ValueError:
+                except (ValueError, TypeError):
                     failure = WalkFailure(fault="format")
             break
         except Exception:  # noqa: BLE001 — keripy raises many extraction error types
@@ -840,13 +840,35 @@ def _bound_target(updates, disclosures) -> str | None:
     return None
 
 
+def _candidate_digest(seal, regid: str) -> str | None:
+    """The digest ``seal`` could anchor a ``regid`` event by, or None.
+
+    keripy matches a registry event's anchor by digest alone (``regeventing.sealDigests``): a
+    bare SAID, or any mapping's ``d``. So a bare digest, a mapping with a ``d`` and no ``i``, and
+    a mapping whose ``i`` is ``regid`` are all candidates; a mapping naming another identifier is
+    that identifier's claim (decision ``3kn6drgf``). Anything that is not a string digest is not
+    a seal keripy would match, and is ignored rather than trusted or crashed on.
+    """
+    if isinstance(seal, str):
+        return seal
+    if (
+        isinstance(seal, dict)
+        and isinstance(seal.get("d"), str)
+        and ("i" not in seal or seal["i"] == regid)
+    ):
+        return seal["d"]
+    return None
+
+
 def _anchored_registry_events(scratch: Scratch, issuer: str, regid: str) -> set[str]:
-    """SAIDs of every ``regid`` event a seal in ``issuer``'s accepted KEL commits to."""
+    """Every digest in ``issuer``'s accepted KEL that could anchor an event of ``regid``."""
     found = set()
     for msg in scratch.hby.db.clonePreIter(pre=issuer, fn=0, gvrsn=V2):
-        for seal in serdering.SerderKERI(raw=bytes(msg)).sad.get("a", []):
-            if isinstance(seal, dict) and seal.get("i") == regid and "d" in seal:
-                found.add(seal["d"])
+        seals = serdering.SerderKERI(raw=bytes(msg)).sad.get("a") or []
+        for seal in seals if isinstance(seals, list) else []:
+            digest = _candidate_digest(seal, regid)
+            if digest is not None:
+                found.add(digest)
     return found
 
 
@@ -906,7 +928,9 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
             raise errors.STREAM_FRAME_REJECTED(frame=rip.said) from fault
 
         presented = {rip.said, *(update.said for update in updates)}
-        missing = _anchored_registry_events(scratch, record.issuer, rip.said) - presented
+        # Every frame the stream carries can explain a digest-only seal, not only this registry's.
+        carried = {frame.said for frame in walked.frames}
+        missing = _anchored_registry_events(scratch, record.issuer, rip.said) - presented - carried
         if missing:
             raise errors.REGISTRY_EVENT_MISSING(
                 aid=record.issuer, regid=rip.said, said=min(missing)

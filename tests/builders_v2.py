@@ -473,6 +473,51 @@ def omitted_revocation(tmp_path) -> builders.Fixture:
         )
 
 
+def bare_seal_omitted_revocation(tmp_path) -> builders.Fixture:
+    """The omitted-revocation attack with the revoking update anchored by a bare SAID, which
+    keripy accepts as a seal (regeventing.sealDigests); the completeness check must too."""
+    with keri_api.scratch_v2("bare-seal", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        _blinder, bup = Registrar(rgy=rgy).issue(
+            issued.registry, acdc=issued.acdc, state="revoked", salt=keri_api.BLIND_SALT,
+            stamp=keri_api.REGISTRY_STAMP,
+        )
+        # keripy's issuer-side engine will not commit an event anchored this way, but its
+        # verifier (vet) accepts the seal, so the KEL alone is what a resolver would see.
+        hab.interact(data=[bup.said], version=V2, gvrsn=V2)
+        stream = (
+            GENUS + _kel(hab) + issued.acdc.raw
+            + assemble.registry_v2_bytes(issued.rip, issued.bups, issued.blinders)
+        )
+        return builders.Fixture(
+            stream, _facts("bare_seal_omitted_revocation", hab, issued,
+                           "e.input.missing.registry.event.f", missing=bup.said)
+        )
+
+
+def malformed_seal_data(tmp_path) -> builders.Fixture:
+    """A valid publication whose KEL also carries an interaction with seal-shaped data keripy
+    would never match (``d`` is a list). It is not an anchor, so it neither blocks publication
+    nor crashes the completeness check."""
+    with keri_api.scratch_v2("malformed-seal", tmp_path) as (hby, rgy):
+        hab, issued = _issued(hby, rgy)
+        hab.interact(data=[{"i": issued.rip.said, "d": []}], version=V2, gvrsn=V2)
+        return builders.Fixture(
+            assemble.keystore_stream_v2(hab, issued), _facts("malformed_seal_data", hab, issued)
+        )
+
+
+def null_sn(tmp_path) -> builders.Fixture:
+    """A SAID-valid update whose ``n`` is JSON null rather than a hex string."""
+    fixture = base(tmp_path)
+    bup_start = fixture.stream.index(b'{"v":"ACDC', fixture.stream.index(b'"t":"bup"') - 40)
+    sad = dict(serdering.SerderACDC(raw=fixture.stream[bup_start:]).sad)
+    sad.update(n=None, d="")
+    forged = serdering.SerderACDC(sad=sad, makify=True)
+    facts = {**fixture.facts, "knob": "null_sn", "expected_code": "e.input.format.stream.f"}
+    return builders.Fixture(fixture.stream + forged.raw, facts)
+
+
 def vacated(tmp_path) -> builders.Fixture:
     """The designation issued, then a vacuous update (keripy's ``Registrar.vacate``) as head.
     keripy reads the state as the latest non-vacuous update's, so this publishes as issued
@@ -618,6 +663,9 @@ KNOBS = {
     "rotated": rotated,
     "forked_kel": forked_kel,
     "omitted_revocation": omitted_revocation,
+    "bare_seal_omitted_revocation": bare_seal_omitted_revocation,
+    "malformed_seal_data": malformed_seal_data,
+    "null_sn": null_sn,
     "vacated": vacated,
     "disclosed_on_acdc": disclosed_on_acdc,
     "historical_blinder_lost": historical_blinder_lost,
@@ -629,6 +677,6 @@ KNOBS = {
 #: Knobs whose stream must be refused, and the exact code each must earn.
 POSITIVE = (
     "base", "genus_per_artifact", "spare_registry", "delegated", "endpoints", "rotated",
-    "vacated", "disclosed_on_acdc", "historical_blinder_lost",
+    "vacated", "disclosed_on_acdc", "historical_blinder_lost", "malformed_seal_data",
 )
 NEGATIVE = tuple(name for name in KNOBS if name not in POSITIVE)
