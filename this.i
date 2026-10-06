@@ -493,6 +493,84 @@ Production did:webs implementation on KERI = goal:
             serialization (eleven lines) that keripy no longer offers, and keeps it in step with
             CESR v1 by hand; the genus oracle (qbqfst) is what notices if it drifts.
 
+    KERI v2 publications are the community's v2, not the fork's = decision:
+      nid: 0plkq8s8
+      why: >
+        didwebs publishes and verifies KERI protocol v2 AIDs as well as v1, as a public reference
+        implementation the did:webs community can run and argue with, not as support for any one
+        bakobo producer. So the target is what stock WebOfTrust/keripy and the KERI and ACDC specs
+        accept, and nothing beyond it. The test case that forced the choice: our keripy pin
+        (6f95d314) also verifies v2 registry updates with the `upd` ilk, which heti issues, but
+        WebOfTrust main refuses them — "The v2 ACDC TEL only supports registry inception and blind
+        updates" (keri/acdc/regeventing.py:121 at 624df8294). A did:webs that accepted `upd`
+        would publish streams the reference verifier rejects. Rejected following the pin: it is a
+        fork branch, and a reference implementation that inherits a fork's extensions teaches
+        the ecosystem the fork. Rejected waiting for the did:webs spec to say what v2 means: it
+        says nothing about protocol versions (spec/body.md, kswg-did-method-webs-specification
+        2d84ef2b), so the implementation is the evidence for the proposal Daniel posts, not its
+        consequence. Accepted tradeoff: streams our own estate produces today (heti's `upd`
+        chains) are refused here until their producer moves to `bup`. The v1 path is unchanged
+        and qbqfst still governs it; for v2 streams the same per-call pin applies with V2.
+      children:
+
+        The version is read from the stream, and one stream is one version = decision:
+          nid: 8686h4tf
+          why: >
+            `didwebs publish` takes no protocol flag: CESR is self-describing, a v2 stream opens
+            with its genus-version counter, and every body carries its own version string, so a
+            resolver must read the version from the bytes anyway and a publisher that asked
+            instead would let the flag and the bytes disagree. A stream whose frames do not all
+            share one major version is refused (e.input.format.stream.f) — a v1 KEL anchoring a
+            v2 registry, or the reverse. Neither spec forbids that mix: the KERI spec scopes the
+            version string to "the associated message" (kswg-keri-specification
+            spec-body.md:267 at 4df80aa), keripy never re-checks a Kever's version after
+            inception (eventing.py:2028), and the ACDC spec requires v2 verifiers to read v1
+            bodies (spec-body.md:68 at f0bd097). Refusing is therefore a choice, made because
+            no deployed resolver has been shown to handle a mixed stream and an undefined
+            combination should fail closed until the spec defines it. The spec proposal raises
+            it. Accepted tradeoff: a controller whose KEL migrates from v1 to v2 mid-life cannot
+            publish here yet.
+
+        A v2 registry is rip and bup, and every bup carries its disclosure = constraint:
+          nid: 3kn6drgf
+          why: >
+            The designated-aliases credential's registry is v2 ACDC-protocol `rip` + `bup` only.
+            A `bup` blinds its state, so whether the alias designation still stands is
+            unreadable unless the blinded state is disclosed — and a public attestation whose
+            state cannot be read cannot authorize a publication. The ACDC spec defines exactly
+            this case: "the issuer attaches the associated expanded blinded attribute block to
+            any publication of a Blindable-Update bup event" (kswg-acdc-specification
+            spec-body.md:2367 at f0bd097), as a BlindedStateQuadruples (-a) group (:2062), with
+            the UUID allowed empty in public mode (:2075). So: every published bup carries its
+            -a disclosure, keri.acdc.regeventing.vet checks it against the bup's BLID, and a bup
+            without one is refused as unprovable, as is any `upd`. Revocation is the disclosed
+            `ts` reading anything other than `issued`; vet assigns `ts` no meaning
+            (regeventing.py:625-646), so the policy is ours and fails closed. keripy's Parser
+            refuses every non-null-ilk ACDC message (parsing.py msgProcess), so these frames are
+            never processed by a Tevery or Verifier: they are walked, vetted against the KEL
+            the parser accepted, and counted accepted only by that vetting. Rejected publishing
+            the issuer's salt instead of per-event disclosures: vet takes "no salt parameter:
+            only the per-event disclosure is accepted" (regeventing.py:558-562), and a salt
+            would also unblind every future event. Accepted tradeoff: an issuer must keep each
+            bup's blinder (keripy returns it from Registrar.issue and persists nothing), or
+            derive it from a salt it is willing to make public.
+
+        The v2 designated-aliases schema is ours, marked proposed = decision:
+          nid: 35yl884k
+          why: >
+            A v2 ACDC cannot validate against the pinned v1 schema EN6Oh5…: that schema requires
+            `ri`, and v2 carries `rd`, `u` and `t`. The did:webs spec names no schema at all —
+            EN6Oh5… is the GLEIF reference implementation's — so someone must mint the v2 one,
+            and a schema SAID is a one-way door once it is in a deployed resolver. Daniel
+            decided 2026-10-06: we mint it as the v1 schema with ri renamed rd and u and t
+            admitted, an `acm`, and propose it, ideally co-signed by GLEIF, who authored v1. It
+            is pinned and SAID-verified at every load exactly as v1's is, and labelled proposed
+            in code and docs until the spec adopts one; if the community picks another, this
+            pin moves and the change is a recorded decision. Rejected accepting any schema
+            titled Designated Aliases Public Attestation: a title is the schema's own claim
+            about itself, so that rule fails open. Rejected waiting for GLEIF to mint it:
+            nothing would exist to propose.
+
     Temporary keripy stores are contained per run, never identified by a shared namespace = constraint:
       id: l7ws7hdt
       why: >
