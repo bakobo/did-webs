@@ -318,6 +318,12 @@ def unanchoring_seal_data(tmp_path) -> Fixture:
         hab.interact(
             data=[{"i": issued.registry.regk, "d": issued.creder.said}], version=keri_api.V1
         )
+        # And one whose `s` is no sequence number at all: verifyAnchor compares it with the TEL
+        # event's own `s`, so it can never match (Copilot on #12).
+        hab.interact(
+            data=[{"i": issued.registry.regk, "s": "not-hex", "d": issued.creder.said}],
+            version=keri_api.V1,
+        )
         return Fixture(
             keri_api.publication_stream(hab, regery, issued.creder),
             _facts(

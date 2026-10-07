@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import shutil
 from dataclasses import dataclass, field, replace
 from typing import Self
@@ -854,6 +855,10 @@ def _kel_seals(scratch: Scratch, issuer: str) -> list[list]:
     return out
 
 
+#: A v1 TEL event's sequence number as keripy writes it: hex, lowercase, no leading zeros.
+_V1_TEL_SN = re.compile(r"0|[1-9a-f][0-9a-f]*")
+
+
 def _v1_anchor(seals: list) -> tuple[str, str] | None:
     """``(log, digest)`` when an event's seals can anchor a v1 transaction event, else None.
 
@@ -863,9 +868,13 @@ def _v1_anchor(seals: list) -> tuple[str, str] | None:
     if len(seals) != 1 or not isinstance(seals[0], dict):
         return None
     seal = seals[0]
-    if all(isinstance(seal.get(key), str) for key in ("i", "s", "d")):
-        return seal["i"], seal["d"]
-    return None
+    if not all(isinstance(seal.get(key), str) for key in ("i", "s", "d")):
+        return None
+    # verifyAnchor compares `s` with the TEL event's own sequence number, which is lowercase hex
+    # with no leading zeros; any other `s` can match no event (Copilot on PR #12).
+    if not _V1_TEL_SN.fullmatch(seal["s"]):
+        return None
+    return seal["i"], seal["d"]
 
 
 @dataclass(frozen=True)
