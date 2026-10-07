@@ -1386,3 +1386,26 @@ def test_the_completeness_check_reads_the_kel_once_however_many_logs(tmp_path, m
         ingest.require_complete_v1(scratch, claimed(facts), ingest.Walk(many, None))
 
     assert calls == [facts["aid"]]
+
+
+def test_the_kel_seals_are_indexed_once_not_scanned_per_log(tmp_path, monkeypatch):
+    """Reading the KEL once was not enough: scanning every seal for every presented log stayed
+    quadratic (fix-diff pass on #12: 4,000 logs x 4,000 seals, 16 s). The seals are indexed by
+    log in one pass, and each log is then a lookup."""
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    many = walked.frames + tuple(
+        walked.frames[-2].replace(principal=f"E{n:043d}") for n in range(50)
+    )
+    with loaded(stream) as scratch:
+        built = []
+        real = ingest._anchor_index
+
+        def counting(*args, **kwargs):
+            built.append(1)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(ingest, "_anchor_index", counting)
+        ingest.require_complete_v1(scratch, claimed(facts), ingest.Walk(many, None))
+
+    assert built == [1]

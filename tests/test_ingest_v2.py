@@ -132,3 +132,24 @@ def test_a_verified_v2_publication_exposes_its_registries(tmp_path):
     with ingest.ingest(stream, _claimed(facts)) as verified:
         assert set(verified.registries) == {facts["regk"]}
         assert verified.registries[facts["regk"]].record.state == "issued"
+
+
+def test_the_v2_anchor_index_follows_keripys_digest_only_matching():
+    """keripy's v2 verifier matches an anchor by digest alone (regeventing.sealDigests). A bare
+    SAID or a {d} seal could anchor any registry's event; a seal naming an identifier counts for
+    that identifier only; anything that is not a string digest is not a seal at all."""
+    index = ingest._anchor_index(
+        [
+            ["Ebare"],
+            [{"d": "Edigest-only"}],
+            [{"i": "Ereg", "s": "1", "d": "Enamed"}],
+            [{"i": "Eother", "d": "Eelsewhere"}],
+            [{"i": 7, "d": "Enot-an-identifier"}],
+            [{"i": "Ereg", "d": []}],
+        ],
+        ingest.V2,
+    )
+
+    assert index.for_log("Ereg") == {"Ebare", "Edigest-only", "Enamed"}
+    assert index.for_log("Eother") == {"Ebare", "Edigest-only", "Eelsewhere"}
+    assert "Enot-an-identifier" not in index.for_log("Ereg")

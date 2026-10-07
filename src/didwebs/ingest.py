@@ -841,26 +841,6 @@ def _bound_target(updates, disclosures) -> str | None:
     return None
 
 
-def _candidate_digest(seal, regid: str) -> str | None:
-    """The digest ``seal`` could anchor a ``regid`` event by, or None.
-
-    keripy matches a registry event's anchor by digest alone (``regeventing.sealDigests``): a
-    bare SAID, or any mapping's ``d``. So a bare digest, a mapping with a ``d`` and no ``i``, and
-    a mapping whose ``i`` is ``regid`` are all candidates; a mapping naming another identifier is
-    that identifier's claim (decision ``3kn6drgf``). Anything that is not a string digest is not
-    a seal keripy would match, and is ignored rather than trusted or crashed on.
-    """
-    if isinstance(seal, str):
-        return seal
-    if (
-        isinstance(seal, dict)
-        and isinstance(seal.get("d"), str)
-        and ("i" not in seal or seal["i"] == regid)
-    ):
-        return seal["d"]
-    return None
-
-
 def _kel_seals(scratch: Scratch, issuer: str) -> list[list]:
     """The seal list of every event in ``issuer``'s accepted KEL, read once.
 
@@ -888,24 +868,49 @@ def _v1_anchor(seals: list) -> tuple[str, str] | None:
     return None
 
 
-def _anchored_registry_events(kel_seals: list[list], version, regid: str) -> set[str]:
-    """Every digest in a KEL's seals that could anchor an event of the transaction log ``regid``.
+@dataclass(frozen=True)
+class AnchorIndex:
+    """A KEL's possible transaction-event anchors, indexed once by the log they could anchor.
 
-    The two versions match anchors differently, and this follows each. v2's verifier matches by
-    digest alone (:func:`_candidate_digest`, decision ``3kn6drgf``); v1's accepts only an event's
-    single full seal (:func:`_v1_anchor`, ``4f74sjd8``).
+    ``by_log`` maps a log identifier to the digests sealed under it. ``unattributed`` holds
+    digests sealed with no identifier at all (a bare SAID, or a ``{d}`` seal), which v2's
+    digest-only matching lets anchor an event of any log; v1 never accepts such a seal.
     """
-    found = set()
+
+    by_log: dict
+    unattributed: frozenset
+
+    def for_log(self, regid: str) -> set[str]:
+        """Every digest that could anchor an event of ``regid``."""
+        return set(self.by_log.get(regid, ())) | self.unattributed
+
+
+def _anchor_index(kel_seals: list[list], version) -> AnchorIndex:
+    """Index a KEL's seals by the log each could anchor, in one pass (decisions ``3kn6drgf``,
+    ``4f74sjd8``). Scanning every seal per log was quadratic in a stream far below the byte bound
+    (fix-diff pass on PR #12).
+
+    The two versions match anchors differently, and this follows each. keripy's v2 verifier
+    matches by digest alone (``regeventing.sealDigests``: a bare SAID, or any mapping's ``d``), so
+    a bare digest, a ``{d}`` seal and a seal whose ``i`` is the log are all candidates, while a seal
+    naming another identifier is that identifier's claim. v1's accepts only an event's single full
+    seal (:func:`_v1_anchor`).
+    """
+    by_log: dict[str, set[str]] = {}
+    unattributed: set[str] = set()
     for seals in kel_seals:
         if version == V2:
-            found.update(
-                digest
-                for digest in (_candidate_digest(seal, regid) for seal in seals)
-                if digest is not None
-            )
-        elif (anchor := _v1_anchor(seals)) is not None and anchor[0] == regid:
-            found.add(anchor[1])
-    return found
+            for seal in seals:
+                if isinstance(seal, str):
+                    unattributed.add(seal)
+                elif isinstance(seal, dict) and isinstance(seal.get("d"), str):
+                    if "i" not in seal:
+                        unattributed.add(seal["d"])
+                    elif isinstance(seal["i"], str):
+                        by_log.setdefault(seal["i"], set()).add(seal["d"])
+        elif (anchor := _v1_anchor(seals)) is not None:
+            by_log.setdefault(anchor[0], set()).add(anchor[1])
+    return AnchorIndex(by_log, frozenset(unattributed))
 
 
 def vet_registries(scratch: Scratch, walked: Walk) -> None:
@@ -937,7 +942,7 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
     occurrences = _disclosures(walked)
     disclosures = {blinder.said: blinder for blinder in occurrences}  # lookup only
     schemer = schemaing.load_designated_aliases_schema_v2()
-    kels: dict[str, list[list]] = {}  # each issuer's KEL seals, read once
+    kels: dict[str, AnchorIndex] = {}  # each issuer's KEL, read and indexed once
 
     for rip in (frame for frame in tels if frame.ilk == REGISTRY_V2_INCEPTION):
         updates = sorted(
@@ -969,8 +974,8 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
         # Every frame the stream carries can explain a digest-only seal, not only this registry's.
         carried = {frame.said for frame in walked.frames}
         if record.issuer not in kels:
-            kels[record.issuer] = _kel_seals(scratch, record.issuer)
-        anchored = _anchored_registry_events(kels[record.issuer], V2, rip.said)
+            kels[record.issuer] = _anchor_index(_kel_seals(scratch, record.issuer), V2)
+        anchored = kels[record.issuer].for_log(rip.said)
         missing = anchored - presented - carried
         if missing:
             raise errors.REGISTRY_EVENT_MISSING(
@@ -1020,9 +1025,9 @@ def require_complete_v1(scratch: Scratch, did, walked: Walk) -> None:
         BakoboError: ``e.input.missing.registry.event.f``, naming the first omitted event.
     """
     presented = {frame.said for frame in walked.frames if frame.is_tel}
-    kel_seals = _kel_seals(scratch, did.aid)
+    index = _anchor_index(_kel_seals(scratch, did.aid), V1)
     for log in sorted({frame.principal for frame in walked.frames if frame.is_tel}):
-        missing = _anchored_registry_events(kel_seals, V1, log) - presented
+        missing = index.for_log(log) - presented
         if missing:
             raise errors.REGISTRY_EVENT_MISSING(aid=did.aid, regid=log, said=min(missing))
 
