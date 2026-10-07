@@ -619,6 +619,26 @@ Production did:webs implementation on KERI = goal:
             about itself, so that rule fails open. Rejected waiting for GLEIF to mint it:
             nothing would exist to propose.
 
+    A v1 publication carries every transaction event its issuer's KEL anchors = constraint:
+      nid: 4f74sjd8
+      why: >
+        A v1 publication stream that leaves out the revoking `rev` (or `brv`) of its designated-
+        aliases ACDC, while the stream's own KEL carries the seal anchoring it, published the
+        designation as issued: keripy's Tevery and Tever.vcState judge only the transaction
+        events presented, and nothing compared them with what the KEL commits to. Found by the
+        2026-10-06 KERI panel as SEC-F1 against the v2 design, which reproduced it on v1 too; the
+        v2 half is closed by 3kn6drgf's completeness rule, and this is the same rule for v1. So:
+        for every transaction event log the stream presents -- a registry (its `vcp` and any
+        `vrt`) or a credential (its `iss`/`rev`, or `bis`/`brv`) -- every event of that log that
+        the claimed AID's accepted KEL seals must be in the stream, else
+        e.input.missing.registry.event.f, the code v2 uses for the same fault. It fetches nothing:
+        the KEL already in hand is the evidence. Scoped to logs the stream presents, because a
+        controller's KEL legitimately anchors credentials it is not publishing; refusing those
+        would make every issuer of a second credential unpublishable. Rejected trusting the
+        newest TEL event presented: that is exactly the reading that failed. Accepted tradeoff:
+        a stream that once published is refused after a later anchored TEL event its producer
+        did not include, which is the point -- the published state would otherwise be stale.
+
     Temporary keripy stores are contained per run, never identified by a shared namespace = constraint:
       id: l7ws7hdt
       why: >

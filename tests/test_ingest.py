@@ -1285,6 +1285,7 @@ REJECTIONS = [
     ("without_acdc", "e.input.missing.alias-acdc.f"),
     ("truncated", "e.input.missing.alias-acdc.f"),
     ("revoked_acdc", "e.state.revoked.alias-acdc.f"),
+    ("omitted_revocation", "e.input.missing.registry.event.f"),
     ("attacker_acdc", "e.grant.missing.alias.f"),
     ("scope_miss", "e.grant.scope.alias.f"),
     ("tampered_sig", "e.proof.stream.sig.f"),
@@ -1345,3 +1346,81 @@ def test_designations_this_method_cannot_read_are_ignored_rather_than_fatal(tmp_
 
     with ingest.ingest(stream, did) as verified:
         assert "did:keri:" + verified.aid in verified.acdc.attrib["ids"]
+
+
+def test_a_controllers_unpublished_credentials_do_not_block_its_publication(tmp_path):
+    """Constraint 4f74sjd8 is scoped to the transaction logs the stream presents: the KEL also
+    anchors a second registry and credential, which this publication does not carry."""
+    stream, facts = fixture("unpublished_second_credential", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert verified.acdc.said == facts["acdc_said"]
+
+
+def test_seal_shaped_data_v1_cannot_anchor_does_not_block_publication(tmp_path):
+    """keripy's v1 verifyAnchor needs the event's one seal to be a full {i, s, d}; data missing
+    ``s`` anchors nothing, so it is not an omitted event (hostile pass on #12)."""
+    stream, facts = fixture("unanchoring_seal_data", tmp_path)
+
+    with ingest.ingest(stream, claimed(facts)) as verified:
+        assert verified.acdc.said == facts["acdc_said"]
+
+
+def test_the_completeness_check_reads_the_kel_once_however_many_logs(tmp_path, monkeypatch):
+    """Rescanning the KEL per presented log made the check quadratic in a stream far below the
+    byte bound (hostile pass on #12: 200 logs, 8 s)."""
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    many = walked.frames + tuple(
+        walked.frames[-2].replace(principal=f"E{n:043d}") for n in range(50)
+    )
+    with loaded(stream) as scratch:
+        calls = []
+        real = scratch.hby.db.clonePreIter
+
+        def counting(*args, **kwargs):
+            calls.append(kwargs.get("pre"))
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(scratch.hby.db, "clonePreIter", counting)
+        ingest.require_complete_v1(scratch, claimed(facts), ingest.Walk(many, None))
+
+    assert calls == [facts["aid"]]
+
+
+def test_the_kel_seals_are_indexed_once_not_scanned_per_log(tmp_path, monkeypatch):
+    """Reading the KEL once was not enough: scanning every seal for every presented log stayed
+    quadratic (fix-diff pass on #12: 4,000 logs x 4,000 seals, 16 s). The seals are indexed by
+    log in one pass, and each log is then a lookup."""
+    stream, facts = fixture("base", tmp_path)
+    walked = ingest.walk(stream)
+    many = walked.frames + tuple(
+        walked.frames[-2].replace(principal=f"E{n:043d}") for n in range(50)
+    )
+    with loaded(stream) as scratch:
+        built = []
+        real = ingest._anchor_index
+
+        def counting(*args, **kwargs):
+            built.append(1)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(ingest, "_anchor_index", counting)
+        ingest.require_complete_v1(scratch, claimed(facts), ingest.Walk(many, None))
+
+    assert built == [1]
+
+
+@pytest.mark.parametrize(
+    "s,counts",
+    [("0", True), ("1", True), ("01", True), ("1A", True), ("a", True), ("not-hex", False),
+     ("", False), ("-1", False), (" 1", False)],
+)
+def test_a_v1_seal_counts_whenever_keripy_could_match_its_sequence_number(s, counts):
+    """verifyAnchor compares the seal's s with the TEL event's own as text, and keripy accepts a
+    TEL event whose s is non-canonical hex such as "01" (fix-diff pass on #12). So a seal counts
+    whenever its s is hex at all; only text no sequence number could be is excluded, which is the
+    case Copilot raised. Erring wide fails closed: an anchored event is never ignored."""
+    seals = [{"i": "Elog", "s": s, "d": "Edigest"}]
+
+    assert (ingest._v1_anchor(seals) is not None) is counts

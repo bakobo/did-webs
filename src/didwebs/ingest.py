@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import shutil
 from dataclasses import dataclass, field, replace
 from typing import Self
@@ -74,6 +75,7 @@ __all__ = [
     "open_scratch",
     "owned",
     "owns_reply",
+    "require_complete_v1",
     "require_delegator",
     "require_no_third_party",
     "require_ownership",
@@ -840,36 +842,86 @@ def _bound_target(updates, disclosures) -> str | None:
     return None
 
 
-def _candidate_digest(seal, regid: str) -> str | None:
-    """The digest ``seal`` could anchor a ``regid`` event by, or None.
+def _kel_seals(scratch: Scratch, issuer: str) -> list[list]:
+    """The seal list of every event in ``issuer``'s accepted KEL, read once.
 
-    keripy matches a registry event's anchor by digest alone (``regeventing.sealDigests``): a
-    bare SAID, or any mapping's ``d``. So a bare digest, a mapping with a ``d`` and no ``i``, and
-    a mapping whose ``i`` is ``regid`` are all candidates; a mapping naming another identifier is
-    that identifier's claim (decision ``3kn6drgf``). Anything that is not a string digest is not
-    a seal keripy would match, and is ignored rather than trusted or crashed on.
+    Completeness asks the same KEL about many transaction logs; reading it per log made the
+    check quadratic in a stream far below the byte bound (hostile pass on PR #12).
     """
-    if isinstance(seal, str):
-        return seal
-    if (
-        isinstance(seal, dict)
-        and isinstance(seal.get("d"), str)
-        and ("i" not in seal or seal["i"] == regid)
-    ):
-        return seal["d"]
-    return None
-
-
-def _anchored_registry_events(scratch: Scratch, issuer: str, regid: str) -> set[str]:
-    """Every digest in ``issuer``'s accepted KEL that could anchor an event of ``regid``."""
-    found = set()
-    for msg in scratch.hby.db.clonePreIter(pre=issuer, fn=0, gvrsn=V2):
+    out = []
+    for msg in scratch.hby.db.clonePreIter(pre=issuer, fn=0, gvrsn=scratch.version):
         seals = serdering.SerderKERI(raw=bytes(msg)).sad.get("a") or []
-        for seal in seals if isinstance(seals, list) else []:
-            digest = _candidate_digest(seal, regid)
-            if digest is not None:
-                found.add(digest)
-    return found
+        out.append(seals if isinstance(seals, list) else [])
+    return out
+
+
+#: Text that could be a v1 TEL event's sequence number: any hex. keripy writes lowercase without
+#: leading zeros, but accepts a TEL event spelled otherwise (e.g. "01") when its seal matches it
+#: as text, so the check errs wide and fails closed (fix-diff pass on PR #12).
+_V1_TEL_SN = re.compile(r"[0-9a-fA-F]+")
+
+
+def _v1_anchor(seals: list) -> tuple[str, str] | None:
+    """``(log, digest)`` when an event's seals can anchor a v1 transaction event, else None.
+
+    keripy's v1 ``Tever.verifyAnchor`` accepts only an event whose ``a`` holds exactly one seal,
+    a full ``{i, s, d}`` (``vdr/eventing.py``); anything else anchors nothing (``4f74sjd8``).
+    """
+    if len(seals) != 1 or not isinstance(seals[0], dict):
+        return None
+    seal = seals[0]
+    if not all(isinstance(seal.get(key), str) for key in ("i", "s", "d")):
+        return None
+    # verifyAnchor compares `s` with the TEL event's own sequence number as text; an `s` that is
+    # not hex can match no event (Copilot on PR #12), any hex one might.
+    if not _V1_TEL_SN.fullmatch(seal["s"]):
+        return None
+    return seal["i"], seal["d"]
+
+
+@dataclass(frozen=True)
+class AnchorIndex:
+    """A KEL's possible transaction-event anchors, indexed once by the log they could anchor.
+
+    ``by_log`` maps a log identifier to the digests sealed under it. ``unattributed`` holds
+    digests sealed with no identifier at all (a bare SAID, or a ``{d}`` seal), which v2's
+    digest-only matching lets anchor an event of any log; v1 never accepts such a seal.
+    """
+
+    by_log: dict
+    unattributed: frozenset
+
+    def for_log(self, regid: str) -> set[str]:
+        """Every digest that could anchor an event of ``regid``."""
+        return set(self.by_log.get(regid, ())) | self.unattributed
+
+
+def _anchor_index(kel_seals: list[list], version) -> AnchorIndex:
+    """Index a KEL's seals by the log each could anchor, in one pass (decisions ``3kn6drgf``,
+    ``4f74sjd8``). Scanning every seal per log was quadratic in a stream far below the byte bound
+    (fix-diff pass on PR #12).
+
+    The two versions match anchors differently, and this follows each. keripy's v2 verifier
+    matches by digest alone (``regeventing.sealDigests``: a bare SAID, or any mapping's ``d``), so
+    a bare digest, a ``{d}`` seal and a seal whose ``i`` is the log are all candidates, while a seal
+    naming another identifier is that identifier's claim. v1's accepts only an event's single full
+    seal (:func:`_v1_anchor`).
+    """
+    by_log: dict[str, set[str]] = {}
+    unattributed: set[str] = set()
+    for seals in kel_seals:
+        if version == V2:
+            for seal in seals:
+                if isinstance(seal, str):
+                    unattributed.add(seal)
+                elif isinstance(seal, dict) and isinstance(seal.get("d"), str):
+                    if "i" not in seal:
+                        unattributed.add(seal["d"])
+                    elif isinstance(seal["i"], str):  # ~666h foreign-i seals count for that i only
+                        by_log.setdefault(seal["i"], set()).add(seal["d"])
+        elif (anchor := _v1_anchor(seals)) is not None:
+            by_log.setdefault(anchor[0], set()).add(anchor[1])
+    return AnchorIndex(by_log, frozenset(unattributed))
 
 
 def vet_registries(scratch: Scratch, walked: Walk) -> None:
@@ -901,6 +953,7 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
     occurrences = _disclosures(walked)
     disclosures = {blinder.said: blinder for blinder in occurrences}  # lookup only
     schemer = schemaing.load_designated_aliases_schema_v2()
+    kels: dict[str, AnchorIndex] = {}  # each issuer's KEL, read and indexed once
 
     for rip in (frame for frame in tels if frame.ilk == REGISTRY_V2_INCEPTION):
         updates = sorted(
@@ -931,7 +984,10 @@ def vet_registries(scratch: Scratch, walked: Walk) -> None:
         presented = {rip.said, *(update.said for update in updates)}
         # Every frame the stream carries can explain a digest-only seal, not only this registry's.
         carried = {frame.said for frame in walked.frames}
-        missing = _anchored_registry_events(scratch, record.issuer, rip.said) - presented - carried
+        if record.issuer not in kels:
+            kels[record.issuer] = _anchor_index(_kel_seals(scratch, record.issuer), V2)
+        anchored = kels[record.issuer].for_log(rip.said)
+        missing = anchored - presented - carried
         if missing:
             raise errors.REGISTRY_EVENT_MISSING(
                 aid=record.issuer, regid=rip.said, said=min(missing)
@@ -967,6 +1023,26 @@ def _schema_valid(schemer, frame: Frame) -> bool:
         return False
 
 
+def require_complete_v1(scratch: Scratch, did, walked: Walk) -> None:
+    """Refuse a v1 stream that omits a transaction event its own KEL anchors (``4f74sjd8``).
+
+    keripy's Tevery judges only the events presented, so a stream that leaves out the ``rev``
+    revoking its designation reads as issued. For every transaction log the stream presents --
+    a registry or a credential -- every event the claimed AID's accepted KEL seals must be in it.
+    Logs the stream does not present are not asked about: a controller may issue credentials it
+    is not publishing.
+
+    Raises:
+        BakoboError: ``e.input.missing.registry.event.f``, naming the first omitted event.
+    """
+    presented = {frame.said for frame in walked.frames if frame.is_tel}
+    index = _anchor_index(_kel_seals(scratch, did.aid), V1)
+    for log in sorted({frame.principal for frame in walked.frames if frame.is_tel}):
+        missing = index.for_log(log) - presented
+        if missing:
+            raise errors.REGISTRY_EVENT_MISSING(aid=did.aid, regid=log, said=min(missing))
+
+
 def audit(scratch: Scratch, did, walked: Walk) -> None:
     """Raise the error the accounting and escrow audits attribute, if the stream earns one.
 
@@ -982,6 +1058,8 @@ def audit(scratch: Scratch, did, walked: Walk) -> None:
         vet_registries(scratch, walked)
     for frame in account_frames(scratch, walked):
         raise attribute(scratch, frame)
+    if walked.version == V1:
+        require_complete_v1(scratch, did, walked)
 
 
 # ------------------------------------------------- the authorization post-conditions
@@ -1109,7 +1187,7 @@ def authorize(scratch: Scratch, did, walked: Walk):
     frame = granted[0]
     # Never inferred from the Verifier having saved it: keripy saves revoked credentials by
     # design and says so in a comment (verifying.py, processCredential). SEC-F4.
-    state = scratch.regery.reger.tevers[frame.regid].vcState(vci=frame.said)  # ~3ivm
+    state = scratch.regery.reger.tevers[frame.regid].vcState(vci=frame.said)
     if state is None or state.et in REVOKED_ILKS:
         raise errors.ALIAS_ACDC_REVOKED(said=frame.said)
 

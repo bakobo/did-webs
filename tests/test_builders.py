@@ -482,11 +482,17 @@ def test_endpoints_names_no_witness_because_none_can_be_built_in_process(tmp_pat
 
 
 def test_the_knob_registry_covers_every_name_the_brief_names():
-    """The brief's list, plus two added later: ``delegated:unanchored``, the one delegation
-    shape that reaches the seal check instead of passing it or stopping short, and
+    """The brief's list, plus five added later: ``delegated:unanchored``, the one delegation
+    shape that reaches the seal check instead of passing it or stopping short;
     ``recovered_kel``, the valid fork the brief did not know was a shape (decision
-    ``vo6rnxve``)."""
+    ``vo6rnxve``); and three for the completeness rule (constraint ``4f74sjd8``) --
+    ``omitted_revocation``, its positive twin ``unpublished_second_credential``, and
+    ``unanchoring_seal_data``, seal-shaped KEL data that keripy would never accept as an
+    anchor."""
     assert set(builders.KNOBS) == {
+        "omitted_revocation",
+        "unpublished_second_credential",
+        "unanchoring_seal_data",
         "base",
         "two_registries",
         "without_acdc",
