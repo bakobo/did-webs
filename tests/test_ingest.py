@@ -1409,3 +1409,18 @@ def test_the_kel_seals_are_indexed_once_not_scanned_per_log(tmp_path, monkeypatc
         ingest.require_complete_v1(scratch, claimed(facts), ingest.Walk(many, None))
 
     assert built == [1]
+
+
+@pytest.mark.parametrize(
+    "s,counts",
+    [("0", True), ("1", True), ("01", True), ("1A", True), ("a", True), ("not-hex", False),
+     ("", False), ("-1", False), (" 1", False)],
+)
+def test_a_v1_seal_counts_whenever_keripy_could_match_its_sequence_number(s, counts):
+    """verifyAnchor compares the seal's s with the TEL event's own as text, and keripy accepts a
+    TEL event whose s is non-canonical hex such as "01" (fix-diff pass on #12). So a seal counts
+    whenever its s is hex at all; only text no sequence number could be is excluded, which is the
+    case Copilot raised. Erring wide fails closed: an anchored event is never ignored."""
+    seals = [{"i": "Elog", "s": s, "d": "Edigest"}]
+
+    assert (ingest._v1_anchor(seals) is not None) is counts

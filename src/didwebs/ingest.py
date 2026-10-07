@@ -855,8 +855,10 @@ def _kel_seals(scratch: Scratch, issuer: str) -> list[list]:
     return out
 
 
-#: A v1 TEL event's sequence number as keripy writes it: hex, lowercase, no leading zeros.
-_V1_TEL_SN = re.compile(r"0|[1-9a-f][0-9a-f]*")
+#: Text that could be a v1 TEL event's sequence number: any hex. keripy writes lowercase without
+#: leading zeros, but accepts a TEL event spelled otherwise (e.g. "01") when its seal matches it
+#: as text, so the check errs wide and fails closed (fix-diff pass on PR #12).
+_V1_TEL_SN = re.compile(r"[0-9a-fA-F]+")
 
 
 def _v1_anchor(seals: list) -> tuple[str, str] | None:
@@ -870,8 +872,8 @@ def _v1_anchor(seals: list) -> tuple[str, str] | None:
     seal = seals[0]
     if not all(isinstance(seal.get(key), str) for key in ("i", "s", "d")):
         return None
-    # verifyAnchor compares `s` with the TEL event's own sequence number, which is lowercase hex
-    # with no leading zeros; any other `s` can match no event (Copilot on PR #12).
+    # verifyAnchor compares `s` with the TEL event's own sequence number as text; an `s` that is
+    # not hex can match no event (Copilot on PR #12), any hex one might.
     if not _V1_TEL_SN.fullmatch(seal["s"]):
         return None
     return seal["i"], seal["d"]
