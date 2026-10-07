@@ -906,7 +906,7 @@ def _anchor_index(kel_seals: list[list], version) -> AnchorIndex:
                 elif isinstance(seal, dict) and isinstance(seal.get("d"), str):
                     if "i" not in seal:
                         unattributed.add(seal["d"])
-                    elif isinstance(seal["i"], str):
+                    elif isinstance(seal["i"], str):  # ~666h foreign-i seals count for that i only
                         by_log.setdefault(seal["i"], set()).add(seal["d"])
         elif (anchor := _v1_anchor(seals)) is not None:
             by_log.setdefault(anchor[0], set()).add(anchor[1])
