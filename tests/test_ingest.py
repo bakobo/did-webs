@@ -264,7 +264,10 @@ def test_every_parser_call_site_pins_its_cesr_genus_explicitly():
     v2-genus parser yields nothing at all — no exception, no diagnostic (design §Shape). Since
     v2 publications, a site may also pass the stream's own version, but never the default."""
     text = Path(ingest.__file__).read_text(encoding="utf-8")
-    sites = [line for line in text.splitlines() if "Parser(" in line or ".parse(" in line]
+    sites = [
+        line for line in text.splitlines()
+        if ("Parser(" in line or ".parse(" in line) and not line.startswith("class ")
+    ]
 
     assert sites, "expected at least one parser call site to pin"
     for site in sites:

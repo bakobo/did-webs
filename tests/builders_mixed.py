@@ -324,6 +324,82 @@ def nested_message(tmp_path) -> builders.Fixture:
     )
 
 
+def _attachment_group_with(parent: bytes, extra: bytes) -> bytes:
+    """``parent`` with ``extra`` appended inside its first frame's attachment group."""
+    first = keri_api.frames(parent)[0]
+    group = counting.Counter(qb64b=parent[first.body_end :], version=V1)
+    inner = parent[first.body_end + group.fullSize : first.end]
+    enlarged = counting.Counter(code="-V", count=(len(inner) + len(extra)) // 4, version=V1)
+    return parent[: first.body_end] + enlarged.qb64b + inner + extra + parent[first.end :]
+
+
+def nested_attachment_group(tmp_path) -> builders.Fixture:
+    """A valid v1 publication whose first frame's attachment group carries a second, nested
+    attachment group holding a whole signed message. keripy flushes a nested group without
+    reading it or recording it anywhere, so it is refused rather than lost (hostile pass on
+    PR #13, finding 1)."""
+    candidate = builders.dropped_frame_candidate(tmp_path)
+    parent = candidate.facts["parent_stream"]
+    orphan = keri_api.frames(candidate.stream[len(parent):])[0]
+    texter = coring.Texter(raw=orphan.raw[orphan.start : orphan.body_end])
+    message = (
+        counting.Counter(code="-W", count=len(texter.qb64b) // 4, version=V1).qb64b
+        + texter.qb64b + orphan.raw[orphan.body_end : orphan.end]
+    )
+    nested = counting.Counter(code="-V", count=len(message) // 4, version=V1).qb64b + message
+    return builders.Fixture(
+        _attachment_group_with(parent, nested),
+        {**candidate.facts, "knob": "nested_attachment_group",
+         "expected_code": "e.input.format.stream.f"},
+    )
+
+
+def enclosed_genus_override(tmp_path) -> builders.Fixture:
+    """A v1 publication whose inception is a body-with-attachments group that switches to genus
+    v2 inside itself: a v1 body with v2 attachments. keripy restores the outer genus when the
+    group ends, so the walk cannot see which genus the message was read under, and refuses
+    the framing rather than guess (hostile pass on PR #13, finding 2; tick ~5zz7)."""
+    with keri_api.scratch("enclosed", tmp_path) as (hby, regery):
+        hab = keri_api.make_hab(hby, "controller")
+        issued = builders._issue(hab, regery, keri_api.designated_ids(hab.pre))
+        in_v1 = [bytes(m) for m in hby.db.clonePreIter(pre=hab.pre, fn=0, gvrsn=V1)]
+        in_v2 = bytes(next(hby.db.clonePreIter(pre=hab.pre, fn=0, gvrsn=V2)))
+        size = serdering.SerderKERI(raw=in_v2).size
+        texter = coring.Texter(raw=in_v2[:size])
+        inner = (
+            gvc(2)
+            + counting.Counter(code=counting.CtrDex_2_0.NonNativeBodyGroup,
+                               count=len(texter.qb64b) // 4, version=V2).qb64b
+            + texter.qb64b + in_v2[size:]
+        )
+        stream = (
+            counting.Counter(code="-U", count=len(inner) // 4, version=V1).qb64b + inner
+            + b"".join(in_v1[1:]) + b"".join(raw for _, raw in _v1_block(regery, issued.creder))
+        )
+        return builders.Fixture(
+            stream, _facts("enclosed_genus_override", hab, "e.input.format.stream.f")
+        )
+
+
+def registry_id_not_text(tmp_path) -> builders.Fixture:
+    """A v2 credential whose ``rd`` is a list. It reads as a frame, and must be refused as
+    one this build cannot read rather than crash the version check (hostile pass on PR #13,
+    finding 3)."""
+    with keri_api.scratch_mixed("rd-list", tmp_path) as (hby, _, rgy):
+        hab = keri_api.make_hab_v2(hby, "controller")
+        v2 = _issue_v2(hab, rgy, keri_api.designated_ids(hab.pre))
+        acm = acdcmap(
+            israid=hab.pre, regid=[], schema=schemaing.DES_ALIASES_SCHEMA_V2_SAID,
+            attribute={"d": "", "dt": assemble.DESIGNATION_DT,
+                       "ids": keri_api.designated_ids(hab.pre)},
+            rule=schemaing.read_designated_aliases_rules(), uuid=None, pvrsn=V2, gvrsn=V2,
+        )
+        stream = _runs(kel_pieces(hby.db, hab.pre) + [(2, acm.raw)] + _v2_block(v2))
+        return builders.Fixture(
+            stream, _facts("registry_id_not_text", hab, "e.input.format.stream.f")
+        )
+
+
 # ------------------------------------------------------------------------------- negative
 
 
@@ -433,6 +509,9 @@ KNOBS = {
     "moved_host": moved_host,
     "recovered_from_a_v2_exploit": recovered_from_a_v2_exploit,
     "nested_message": nested_message,
+    "nested_attachment_group": nested_attachment_group,
+    "enclosed_genus_override": enclosed_genus_override,
+    "registry_id_not_text": registry_id_not_text,
     "backslid": backslid,
     "switch_without_counter": switch_without_counter,
     "body_genus_disagrees": body_genus_disagrees,

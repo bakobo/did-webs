@@ -48,7 +48,7 @@ from keri.app import habbing
 from keri.core import Blinder, BlindState, counting, routing, serdering
 from keri.core import eventing as keventing
 from keri.core.parsing import Parser
-from keri.kering import Kinds, ShortageError, Vrsn_1_0, Vrsn_2_0
+from keri.kering import Colds, Kinds, ShortageError, Vrsn_1_0, Vrsn_2_0
 from keri.peer import exchanging
 from keri.vdr import credentialing, verifying
 from keri.vdr import eventing as teventing
@@ -95,9 +95,8 @@ V1 = Vrsn_1_0
 #: as its body and its genus agree (decision ``8686h4tf``).
 V2 = Vrsn_2_0
 
-#: The genus-version counters that switch a stream into v2, and back into v1.
+#: The genus-version counter that switches a stream into v2.
 GENUS_V2 = bytes(counting.Counter.makeGVC(version=V2))
-GENUS_V1 = bytes(counting.Counter.makeGVC(version=V1))
 
 #: The only serialization didwebs accepts — narrower than "v1" on purpose (SKP-F5).
 ACCEPTED_KIND = Kinds.json
@@ -235,7 +234,15 @@ def _frame(serder, sigers, disclosures=(), genus=1) -> Frame:
     about its AID, a transaction event about its registry or credential identifier, and an ACDC
     about its issuer (``SerderACDC.israid``). The third-party sweep and the accounting audit both
     index on this, so it is computed once, here.
+
+    Raises:
+        TypeError: a credential or registry event names its registry with something other than
+            text. The walk turns that into a format fault (hostile pass on PR #13).
     """
+    if serder.proto == ACDC:
+        named = serder.sad.get("rd", serder.sad.get("ri"))
+        if named is not None and not isinstance(named, str):
+            raise TypeError(f"{serder.said} names its registry with a {type(named).__name__}")
     if serder.proto == ACDC and serder.ilk in REGISTRY_V2_ILKS | REGISTRY_V2_REFUSED:
         regid = serder.said if serder.ilk == REGISTRY_V2_INCEPTION else serder.sad.get("rd")
         return Frame(
@@ -340,6 +347,38 @@ def _final_frame(residue: bytes, genus):  # ~3rz6
     return serder
 
 
+#: Groups the walk cannot account for. keripy reads a message enclosed in a body-with-attachments
+#: or generic group under a genus override it forgets when the group ends, so the genus the
+#: message was read under is unknowable here (tick ~5zz7); and it flushes an attachment group
+#: nested in another without reading it, so whatever it holds would vanish (hostile pass on
+#: PR #13). Nothing this build emits uses any of them.
+_ENCLOSING_GROUPS = frozenset({
+    "BodyWithAttachmentGroup", "BigBodyWithAttachmentGroup", "GenericGroup", "BigGenericGroup",
+})
+_ATTACHMENT_GROUPS = frozenset({"AttachmentGroup", "BigAttachmentGroup"})
+
+
+class _CountingParser(Parser):
+    """keripy's Parser, noting the name of every counter it reads, so the walk can refuse
+    framing whose contents keripy would read under a forgotten genus or not read at all."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.counters: list[str] = []
+
+    def _extractor(self, ims, klas, cold=Colds.txt, abort=False, strip=True):
+        found = yield from super()._extractor(ims, klas, cold=cold, abort=abort, strip=strip)
+        if klas is counting.Counter:
+            self.counters.append(found.name)
+        return found
+
+
+def _unaccountable(counters: list[str]) -> bool:
+    """Whether a message's counters include framing the walk cannot account for."""
+    attachment_groups = sum(1 for name in counters if name in _ATTACHMENT_GROUPS)
+    return attachment_groups > 1 or any(name in _ENCLOSING_GROUPS for name in counters)
+
+
 def walk(stream: bytes) -> Walk:
     """Extract every frame of ``stream``, one message at a time, with the CESR genus pinned to
     the stream's own version (:func:`stream_version`).
@@ -354,12 +393,13 @@ def walk(stream: bytes) -> Walk:
     """
     opening = stream_version(stream)
     genus = opening
-    parser = Parser(framed=True, version=opening)
+    parser = _CountingParser(framed=True, version=opening)
     ims = bytearray(stream)
     frames: list[Frame] = []
     failure = None
     while ims:
         residue = bytes(ims)
+        parser.counters = []
         extractor = parser.msgParsator(ims=ims, framed=True, local=False, version=genus)
         try:
             while True:
@@ -371,7 +411,7 @@ def walk(stream: bytes) -> Walk:
             # next counter (decision 8686h4tf, rule 3).
             genus = parser.version  # ~5zz7
             message = done.value
-            if message.nests:
+            if message.nests or _unaccountable(parser.counters):
                 # keripy extracts a message nested in an attachment group into `nests` and
                 # processes nothing in it, so it would vanish from every account (panel CSR-F2).
                 failure = WalkFailure(fault="format")
