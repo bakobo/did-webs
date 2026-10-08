@@ -305,7 +305,7 @@ def _same_identifier(entry: str, did) -> tuple[str, object] | None:
 def also_known_as(ids: list, did) -> list:
     """The designated aliases this document publishes (``### Also Known As``).
 
-    Every entry the credential designates, in the order the controller designated them, minus
+    Every entry the designations name, in the order the controller designated them, minus
     the document's own subject — which is the ``id``, not an alias of itself — plus
     ``did:keri:<aid>``, which a did:webs document MUST always provide.
 
@@ -383,15 +383,17 @@ def derive_document(verified, did) -> dict:
     """The DID document for ``did``, derived from an ingested stream's verified state.
 
     Pure given that state (constraint ``embuup``): the key state is what keripy accepted, the
-    endpoint records are what BADA accepted, and the designations are read from the credential
-    keripy saved — never from the bytes the submitter sent.
+    endpoint records are what BADA accepted, and the designations are read from the credentials
+    the audit accepted — never from the bytes the submitter sent. Every valid, unrevoked
+    designation contributes its identifiers, in the order ingest gives them (decision
+    ``7p6j5kde``).
 
     Raises:
         BakoboError: an unsupported key algorithm or threshold shape, or an alias naming
             another AID. Each stops the publication; none of them yields a partial document.
     """
     return project_document(
-        verified.hby.kevers[did.aid], verified.hby.db, verified.acdc.attrib["ids"], did
+        verified.hby.kevers[did.aid], verified.hby.db, verified.ids, did
     )
 
 

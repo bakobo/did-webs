@@ -485,7 +485,7 @@ def test_the_emitted_stream_re_ingests_to_the_same_state_and_the_same_document(k
         assert {frame.said for frame in second.frames} == original_frames
         assert key_state(second.hby.kevers[did.aid]) == original_state
         assert document.derive_document(second, did) == original_doc
-        assert second.acdc.said == first.acdc.said
+        assert second.designations[0].said == first.designations[0].said
 
 
 def test_a_round_tripped_stream_still_carries_its_endpoints(tmp_path):
@@ -527,7 +527,7 @@ def test_the_keystore_entry_point_mints_an_aid_and_a_publishable_stream(tmp_path
     assert did.startswith("did:webs:labs.bakobo.com:")
     with ingest.ingest(stream.read_bytes(), did_module.parse(did)) as verified:
         assert did.endswith(verified.aid)
-        assert verified.acdc.attrib["ids"] == [
+        assert verified.ids == [
             f"did:web:labs.bakobo.com:{verified.aid}",
             did,
         ]
@@ -540,7 +540,7 @@ def test_the_minted_did_can_carry_a_port(tmp_path, capsys):
 
     assert did.startswith("did:webs:labs.bakobo.com%3A8443:")
     with ingest.ingest(stream.read_bytes(), did_module.parse(did)) as verified:
-        assert f"did:web:labs.bakobo.com%3A8443:{verified.aid}" in verified.acdc.attrib["ids"]
+        assert f"did:web:labs.bakobo.com%3A8443:{verified.aid}" in verified.ids
 
 
 def test_the_keystore_entry_point_keeps_its_keystore_where_it_was_told_to(tmp_path, capsys):

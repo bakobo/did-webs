@@ -12,8 +12,9 @@ and a customer's keystore is never ours to write to.
 bytes (constraint ``embuup``). It is the hosted-artifact path, and it shares this module
 because both roles emit the same wire shapes.
 
-Protocol v1 is pinned explicitly at every call that constructs an event (constraint
-``qbqfst``). On this keripy line (2.0.0-dev6) the version default is v2 and it is chosen *per
+The protocol version is passed explicitly at every call that constructs an event (constraint
+``qbqfst``): v1 for a v1 event, and for an anchor the version of the KEL it extends, so issuing
+never migrates a KEL as a side effect (decision ``8686h4tf``). On this keripy line (2.0.0-dev6) the version default is v2 and it is chosen *per
 call site* — ``interact`` does not inherit the version of the KEL it extends — so an omitted
 argument silently injects a v2 frame that every deployed 1.2.x parser drops. Three keripy
 entry points take no version argument at all and derive it instead:
@@ -47,7 +48,7 @@ from keri.vdr.eventing import (
     Reger,  # `viring.Reger` in the reference; merged into vdr.eventing on this line
 )
 
-from didwebs import errors, schemaing
+from didwebs import errors, ingest, schemaing
 
 #: The protocol version every event this module constructs carries. Never omit it.
 V1 = Vrsn_1_0
@@ -155,10 +156,24 @@ def serialize_v1(creder, prefixer, seqner, saider) -> bytes:
     return bytes(craw)
 
 
+def _kel_version(hab: habbing.Hab):
+    """The protocol version of ``hab``'s latest event, which an anchor it makes must carry.
+
+    An anchor in any other version would either migrate the KEL as a side effect of issuing, or
+    return a migrated one to v1, which ingest refuses (decision ``8686h4tf``, rule 2). Read off
+    the latest event rather than ``Kever.version``, which keripy leaves at the inception version.
+    """
+    return hab.kever.serder.pvrsn
+
+
 def _anchor(hab: habbing.Hab, serder) -> serdering.SerderKERI:
-    """Commit a TEL event's seal to the controller's KEL with a v1-pinned interaction event."""
+    """Commit a TEL event's seal to the controller's KEL with an interaction event in the KEL's
+    own version: v1, pinned, for a KEL that has never migrated (``qbqfst``)."""
     seal = eventing.SealEvent(serder.pre, serder.ked["s"], serder.said)._asdict()
-    return serdering.SerderKERI(raw=bytes(hab.interact(data=[seal], version=V1)))
+    version = _kel_version(hab)
+    return serdering.SerderKERI(
+        raw=bytes(hab.interact(data=[seal], version=version, gvrsn=version))
+    )
 
 
 def issue_aliases(
@@ -217,42 +232,6 @@ def issue_aliases(
     return Issued(registry, creder, iss_serder, iss_anchor)
 
 
-def _emit_stream_v2(verified) -> bytes:
-    """:func:`emit_stream` for a v2 publication: the same derivation, in v2's shape.
-
-    One genus-version counter, then the key event log (the delegator's first) replayed from the
-    scratch database at genus v2, then the accepted reply records, then every accepted credential,
-    then every vetted registry with each update carrying the disclosure ingest verified against
-    its BLID (decision ``3kn6drgf``).
-
-    Two differences from v1, both deliberate. The KEL is keripy's own v2 clone, without v1's
-    projection of witness signatures into receipt couples: that projection serves v1 consumers
-    and is written in v1 counters, and a v2 clone carries the indexed witness signatures
-    natively. And credentials precede registries, so that the stream ends on an attached
-    update -- keripy's extractor cannot finish an attachment-less final frame. A spare registry
-    goes before the designation's, which always has an update, for the same reason.
-    """
-    db = verified.hby.db
-    kever = verified.hby.kevers[verified.aid]
-
-    msgs = bytearray(counting.Counter.makeGVC(version=V2))
-    for msg in db.cloneDelegation(kever=kever, gvrsn=V2):
-        msgs.extend(msg)
-    for msg in db.clonePreIter(pre=verified.aid, fn=0, gvrsn=V2):  # ~5zmu
-        msgs.extend(msg)
-    for frame in verified.frames:
-        if frame.ilk == REPLY:
-            msgs.extend(_reply_bytes(db, frame.said, gvrsn=V2))
-
-    registries = sorted(verified.registries.values(), key=lambda r: r.credential is not None)
-    for registry in registries:
-        if registry.credential is not None:
-            msgs.extend(registry.credential.raw)
-    for registry in registries:
-        msgs.extend(registry_v2_bytes(registry.rip, registry.updates, registry.blinders))
-    return bytes(msgs)
-
-
 # ------------------------------------------------ the keystore side, KERI protocol v2
 
 
@@ -282,16 +261,12 @@ class IssuedV2:
         return self.blinders[-1]
 
 
-def _require_v2(hab: habbing.Hab) -> None:
-    """Refuse a v1 controller: one stream is one version (decision ``8686h4tf``)."""
-    if hab.kever.serder.pvrsn != V2:
-        raise errors.STREAM_VERSION_MIXED(aid=hab.pre, version=hab.kever.serder.pvrsn.major)
-
-
 def _anchor_v2(hab: habbing.Hab, registry, serder) -> None:
-    """Seal one v2 registry event into ``hab``'s KEL and record the anchor with the registry."""
+    """Seal one v2 registry event into ``hab``'s KEL, in the KEL's own version, and record the
+    anchor with the registry. A v1 KEL may anchor a v2 registry (decision ``8686h4tf``)."""
     seal = {"i": registry.regk, "s": serder.sad["n"], "d": serder.said}
-    hab.interact(data=[seal], version=V2, gvrsn=V2)
+    version = _kel_version(hab)
+    hab.interact(data=[seal], version=version, gvrsn=version)
     if not registry.anchorMsg(serder.said):
         raise errors.REGISTRY_ANCHOR_UNCOMMITTED(said=serder.said)
 
@@ -315,7 +290,8 @@ def issue_aliases_v2(
     (decision ``0plkq8s8``).
 
     Args:
-        hab: the controller, whose KEL must be protocol v2.
+        hab: the controller, whose KEL may be either protocol version; the anchors are made in
+            its own.
         rgy: a ``keri.acdc.Regery`` bound to ``hab``'s Habery.
         ids: the DIDs to designate, verbatim, in order.
         dt: designation timestamp inside the credential.
@@ -325,7 +301,6 @@ def issue_aliases_v2(
             never published, only the per-update disclosures are.
         stamp: the registry events' own timestamps; now when None.
     """
-    _require_v2(hab)
     registrar = Registrar(rgy=rgy)
     registry = registrar.makeRegistry(name=regname, prefix=hab.pre, uuid=uuid, stamp=stamp)
     rip = rgy.store.event(registry.regk)
@@ -352,7 +327,6 @@ def revoke_aliases_v2(
     hab: habbing.Hab, rgy, issued: IssuedV2, *, salt: str | None = None, stamp: str | None = None
 ) -> IssuedV2:
     """Record ``issued``'s designation as ``revoked`` with a further anchored ``bup``."""
-    _require_v2(hab)
     blinder, bup = Registrar(rgy=rgy).issue(
         issued.registry, acdc=issued.acdc, state="revoked", salt=salt, stamp=stamp
     )
@@ -384,17 +358,19 @@ def registry_v2_bytes(rip, bups, blinders) -> bytes:
 def keystore_stream_v2(hab: habbing.Hab, issued: IssuedV2, *, replies: bytes = b"") -> bytes:
     """A v2 publication stream assembled from a keystore *we* control.
 
-    Genus-version counter, the KEL, any ``replies`` (signed ``rpy`` records the caller made at
-    genus v2), the ACDC, then the registry. The ACDC precedes its registry
+    The KEL with each event in its own genus, any ``replies`` (signed ``rpy`` records the caller
+    made at genus v2), the ACDC, then the registry, with a genus-version counter wherever the
+    genus changes -- so a v2 KEL's stream opens with one, and a v1 KEL's switches after it. The ACDC precedes its registry
     for a mechanical reason: it carries no attachment, and keripy's extractor cannot finish an
     attachment-less final frame, so an attached ``bup`` goes last.
     """
-    msgs = bytearray(counting.Counter.makeGVC(version=V2))
-    msgs.extend(hab.replay(pre=hab.pre, gvrsn=V2))  # a delegate's delegator first
-    msgs.extend(replies)
-    msgs.extend(issued.acdc.raw)
-    msgs.extend(registry_v2_bytes(issued.rip, issued.bups, issued.blinders))
-    return bytes(msgs)
+    pieces = []
+    for pre in [*_delegation_chain(hab.db, hab.kever), hab.pre]:  # a delegate's delegator first
+        pieces.extend(_kel_pieces(hab.db, pre))
+    pieces.append((V2.major, replies))
+    pieces.append((V2.major, issued.acdc.raw))
+    pieces.append((V2.major, registry_v2_bytes(issued.rip, issued.bups, issued.blinders)))
+    return _runs(pieces)
 
 
 # --------------------------------------------------- the ingest side: the hosted keri.cesr
@@ -509,23 +485,54 @@ def _with_witness_receipts(msg: bytes, receipts: bytes, said: str, body_size: in
     )
 
 
-def _kel_replay_messages(db, messages):
-    """Project verified receipt couples onto every KEL event in replay order."""
-    witnesses_by_pre = {}
-    for msg in messages:
-        serder = serdering.SerderKERI(raw=msg)
-        pre = serder.pre
+def _genus(major: int):
+    return V2 if major == V2.major else V1
+
+
+def _kel_pieces(db, pre: str):
+    """``pre``'s accepted KEL in first-seen order, each event as ``(major, message)`` cloned in
+    its own genus (decision ``8686h4tf``).
+
+    A v1 event also carries its verified witness signatures projected into v1 receipt couples,
+    which serves v1 consumers and is written in v1 counters; a v2 event is keripy's own clone,
+    which carries the indexed witness signatures natively. The witness list follows every
+    establishment event, whichever its version.
+    """
+    witnesses: list[str] = []
+    for fn, serder in ingest.first_seen(db, pre):
+        msg = bytes(db.cloneEvtMsg(pre=pre, fn=fn, dig=serder.said, gvrsn=serder.pvrsn))
         keys = (pre, serder.said)
         if serder.estive:
-            witnesses_by_pre[pre] = [wit.qb64 for wit in db.wits.get(keys=keys)]
-        wigers = db.wigs.get(keys=keys)
-        receipts = _witness_receipt_couples(serder, witnesses_by_pre.get(pre, []), wigers)
-        yield _with_witness_receipts(msg, receipts, serder.said, serder.size)
+            witnesses = [wit.qb64 for wit in db.wits.get(keys=keys)]
+        if serder.pvrsn.major == V1.major:
+            receipts = _witness_receipt_couples(serder, witnesses, db.wigs.get(keys=keys))
+            msg = _with_witness_receipts(msg, receipts, serder.said, serder.size)
+        yield serder.pvrsn.major, msg
 
 
-def _kel_replay(db, pre: str):
-    """Replay one KEL with its verified witness signatures in both v1 receipt forms."""
-    yield from _kel_replay_messages(db, db.clonePreIter(pre=pre, fn=0, gvrsn=V1))
+def _delegation_chain(db, kever) -> list[str]:
+    """The AIDs whose KELs must precede ``kever``'s, the root delegator first -- the order
+    ``db.cloneDelegation`` replays them in, without its single genus for every event."""
+    chain: list[str] = []
+    while kever.delegated and kever.delpre in db.kevers:
+        chain.insert(0, kever.delpre)
+        kever = db.kevers[kever.delpre]
+    return chain
+
+
+def _runs(pieces) -> bytes:
+    """Join ``(major, message)`` pieces into one stream, with a genus-version counter before the
+    first message of every run in a genus other than the one before it (decision ``8686h4tf``,
+    rule 3). A stream starts in genus v1, as ingest reads one with no counter, so a v1
+    publication carries none and a v2 one exactly the one it opens with."""
+    out = bytearray()
+    genus = V1.major
+    for major, raw in pieces:
+        if major != genus:
+            out.extend(counting.Counter.makeGVC(version=_genus(major)))
+            genus = major
+        out.extend(raw)
+    return bytes(out)
 
 
 def emit_stream(verified) -> bytes:
@@ -540,8 +547,16 @@ def emit_stream(verified) -> bytes:
 
     The order is the reference's (``dws/core/artifacting.py``, ``generate_artifacts``), which
     is what the deployed did:webs ecosystem re-ingests: the key event log with the delegator's
-    replayed first, then the accepted reply records, then for each accepted credential its
-    registry's transaction log, its own, and the credential itself.
+    replayed first, then the accepted reply records, then for each accepted v1 credential its
+    registry's transaction log, its own, and the credential itself. v2 credentials and then v2
+    registries follow, each registry update carrying the disclosure ingest verified against its
+    BLID (decision ``3kn6drgf``).
+
+    Every message is hosted in its own genus, with a genus-version counter wherever the genus
+    changes (decision ``8686h4tf``), so a KEL that migrated from v1 to v2 is replayed with its v1
+    events in v1 and its v2 events in v2. A publication in one version comes out exactly as it
+    did when a stream could only be one version: a v1 one with no counter, a v2 one opening with
+    its counter and carrying no other.
 
     The key event log is replayed **first seen**, so a KEL that carries a superseding recovery
     is hosted with the superseded event still in it — constraint ``vctci4we``, which is the
@@ -554,30 +569,25 @@ def emit_stream(verified) -> bytes:
     Returns:
         bytes: the ``keri.cesr`` artifact.
     """
-    if verified.version == V2:
-        return _emit_stream_v2(verified)
-
     hby = verified.hby
     db = hby.db
     reger = verified.regery.reger
     kever = hby.kevers[verified.aid]
 
-    msgs = bytearray()
     # `Hab.replay`'s recipe, driven on the database because a published AID is never a local
     # Hab: a delegate's events cannot be verified before its delegator's.
-    for msg in _kel_replay_messages(db, db.cloneDelegation(kever=kever, gvrsn=V1)):
-        msgs.extend(msg)
-    for msg in _kel_replay(db, verified.aid):
-        msgs.extend(msg)
+    pieces = []
+    for pre in [*_delegation_chain(db, kever), verified.aid]:  # ~5zmu
+        pieces.extend(_kel_pieces(db, pre))
 
     for frame in verified.frames:
         if frame.ilk == REPLY:
-            msgs.extend(_reply_bytes(db, frame.said))  # ~6g4x
+            pieces.append((frame.major, _reply_bytes(db, frame.said, gvrsn=_genus(frame.major))))  # ~6g4x
 
     creders = [
         reger.creds.get(keys=(frame.said,))
         for frame in verified.frames
-        if frame.ilk is CREDENTIAL
+        if frame.ilk is CREDENTIAL and frame.major == V1.major
     ]
     # Registries first, each once — a credential's transaction log means nothing without the
     # registry's, and two credentials may share one. For the single-credential publication
@@ -595,13 +605,26 @@ def emit_stream(verified) -> bytes:
         + [frame.principal for frame in verified.frames if frame.ilk == REGISTRY]
     )
     for regid in registries:
-        msgs.extend(_tel_bytes(reger, regid))
+        pieces.append((V1.major, _tel_bytes(reger, regid)))
     for creder in creders:
-        msgs.extend(_tel_bytes(reger, creder.said))
+        pieces.append((V1.major, _tel_bytes(reger, creder.said)))
         prefixer, seqner, saider = reger.cancs.get(keys=(creder.said,))
-        msgs.extend(serialize_v1(creder, prefixer, seqner, saider))
+        pieces.append((V1.major, serialize_v1(creder, prefixer, seqner, saider)))
 
-    return bytes(msgs)
+    # v2 last, credentials before registries, so that a stream with a v2 registry ends on an
+    # attached update: keripy's extractor cannot finish an attachment-less final frame (~3rz6).
+    # A spare registry goes before the designation's, which always has an update, for the same
+    # reason.
+    vetted = sorted(verified.registries.values(), key=lambda r: r.credential is not None)
+    for registry in vetted:
+        if registry.credential is not None:
+            pieces.append((V2.major, registry.credential.raw))
+    for registry in vetted:
+        pieces.append(
+            (V2.major, registry_v2_bytes(registry.rip, registry.updates, registry.blinders))
+        )
+
+    return _runs(pieces)
 
 
 # ------------------------------------------- the keystore side as a fixture/demo entry point

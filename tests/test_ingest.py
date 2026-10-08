@@ -254,7 +254,9 @@ def test_the_gate_rejects_a_walked_frame_whose_protocol_version_is_not_v1(tmp_pa
 
 #: The only genus arguments a parser call site in ingest may pass: the v1 pin, or the version
 #: the stream was read under (decision 8686h4tf). Never keripy's default.
-_PINNED_GENUS = ("version=V1", "version=version", "version=self.version")
+_PINNED_GENUS = (
+    "version=V1", "version=version", "version=self.version", "version=opening", "version=genus"
+)
 
 
 def test_every_parser_call_site_pins_its_cesr_genus_explicitly():
@@ -274,7 +276,7 @@ def test_a_v1_stream_is_parsed_under_the_v1_genus_whatever_the_v2_path_does(tmp_
     """The version is read from the stream, so a v1 stream must still select V1 everywhere."""
     stream, _ = fixture("base", tmp_path)
 
-    assert ingest.walk(stream).version == ingest.V1
+    assert ingest.walk(stream).opening == ingest.V1
     with ingest.open_scratch(ingest.stream_version(stream)) as scratch:
         assert scratch.version == ingest.V1
         assert scratch.hby.version == ingest.V1
@@ -543,7 +545,7 @@ def test_a_strangers_whole_publication_riding_a_valid_submission_is_rejected(tmp
     with loaded(stream) as scratch:
         assert ingest.account_frames(scratch, walked) == ()
         assert ingest.audit(scratch, claimed(facts), walked) is None
-        assert ingest.authorize(scratch, claimed(facts), walked).said == facts["acdc_said"]
+        assert [c.said for c in ingest.authorize(scratch, claimed(facts), walked)] == [facts["acdc_said"]]
 
         with pytest.raises(BakoboError) as caught:
             ingest.require_ownership(scratch, claimed(facts), walked)
@@ -1174,8 +1176,8 @@ def test_a_valid_publication_stream_verifies(tmp_path):
     with ingest.ingest(stream, claimed(facts)) as verified:
         assert verified.aid == facts["aid"]
         assert verified.did == claimed(facts)
-        assert verified.acdc.said == facts["acdc_said"]
-        assert verified.acdc.regid == facts["regk"]
+        assert verified.designations[0].said == facts["acdc_said"]
+        assert verified.designations[0].regid == facts["regk"]
         assert [frame.ilk for frame in verified.frames] == ["icp", "ixn", "ixn", "vcp", "iss", None]
         assert verified.hby.kevers[facts["aid"]].sner.num == facts["kel_sn"]
         assert verified.regery.reger.tevers[facts["regk"]].pre == facts["aid"]
@@ -1217,7 +1219,7 @@ def test_an_alias_naming_a_foreign_aid_still_ingests(tmp_path):
     stream, facts = fixture("alias_foreign_aid", tmp_path)
 
     with ingest.ingest(stream, claimed(facts)) as verified:
-        assert facts["foreign_alias"] in verified.acdc.attrib["ids"]
+        assert facts["foreign_alias"] in verified.ids
 
 
 # ---------------------------------------------------------- unit 3: Verified and its lifetime
@@ -1345,7 +1347,7 @@ def test_designations_this_method_cannot_read_are_ignored_rather_than_fatal(tmp_
     )
 
     with ingest.ingest(stream, did) as verified:
-        assert "did:keri:" + verified.aid in verified.acdc.attrib["ids"]
+        assert "did:keri:" + verified.aid in verified.ids
 
 
 def test_a_controllers_unpublished_credentials_do_not_block_its_publication(tmp_path):
@@ -1354,7 +1356,7 @@ def test_a_controllers_unpublished_credentials_do_not_block_its_publication(tmp_
     stream, facts = fixture("unpublished_second_credential", tmp_path)
 
     with ingest.ingest(stream, claimed(facts)) as verified:
-        assert verified.acdc.said == facts["acdc_said"]
+        assert verified.designations[0].said == facts["acdc_said"]
 
 
 def test_seal_shaped_data_v1_cannot_anchor_does_not_block_publication(tmp_path):
@@ -1363,7 +1365,7 @@ def test_seal_shaped_data_v1_cannot_anchor_does_not_block_publication(tmp_path):
     stream, facts = fixture("unanchoring_seal_data", tmp_path)
 
     with ingest.ingest(stream, claimed(facts)) as verified:
-        assert verified.acdc.said == facts["acdc_said"]
+        assert verified.designations[0].said == facts["acdc_said"]
 
 
 def test_the_completeness_check_reads_the_kel_once_however_many_logs(tmp_path, monkeypatch):
@@ -1376,13 +1378,13 @@ def test_the_completeness_check_reads_the_kel_once_however_many_logs(tmp_path, m
     )
     with loaded(stream) as scratch:
         calls = []
-        real = scratch.hby.db.clonePreIter
+        real = ingest.first_seen
 
-        def counting(*args, **kwargs):
-            calls.append(kwargs.get("pre"))
-            return real(*args, **kwargs)
+        def counting(db, pre):
+            calls.append(pre)
+            return real(db, pre)
 
-        monkeypatch.setattr(scratch.hby.db, "clonePreIter", counting)
+        monkeypatch.setattr(ingest, "first_seen", counting)
         ingest.require_complete_v1(scratch, claimed(facts), ingest.Walk(many, None))
 
     assert calls == [facts["aid"]]

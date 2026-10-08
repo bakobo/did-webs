@@ -97,7 +97,7 @@ def test_the_published_stream_is_re_ingestable_and_agrees_with_what_went_in(tmp_
     published = artifacts(out, facts)[1].read_bytes()
     with ingest.ingest(published, did_module.parse(facts["did_webs"])) as verified:
         assert verified.aid == facts["aid"]
-        assert verified.acdc.said == facts["acdc_said"]
+        assert verified.designations[0].said == facts["acdc_said"]
         assert verified.hby.kevers[facts["aid"]].sner.num == facts["kel_sn"]
 
 

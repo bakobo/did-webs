@@ -38,10 +38,10 @@ def test_a_valid_v2_publication_verifies(knob, tmp_path):
     stream, facts = builders_v2.KNOBS[knob](tmp_path)
 
     with ingest.ingest(stream, _claimed(facts)) as verified:
-        assert verified.version == keri_api.V2
+        assert {frame.major for frame in verified.frames} == {keri_api.V2.major}
         assert verified.aid == facts["aid"]
-        assert verified.acdc.said == facts["acdc_said"]
-        assert verified.acdc.attrib["ids"] == facts["ids"]
+        assert verified.designations[0].said == facts["acdc_said"]
+        assert verified.ids == facts["ids"]
         doc = document.derive_document(verified, _claimed(facts))
 
     assert doc["id"] == facts["did_webs"]
@@ -91,7 +91,7 @@ def test_a_v2_stream_whose_final_frame_carries_no_attachment_still_walks(tmp_pat
     reordered = stream.replace(acdc.serder.raw, b"") + acdc.serder.raw
 
     with ingest.ingest(reordered, _claimed(facts)) as verified:
-        assert verified.acdc.said == facts["acdc_said"]
+        assert verified.designations[0].said == facts["acdc_said"]
 
 
 def test_the_v2_walk_records_each_registry_frame_under_its_registry(tmp_path):
@@ -116,7 +116,7 @@ def test_verified_state_carries_each_vetted_registry_with_its_disclosures(tmp_pa
     claimed = _claimed(facts)
 
     walked = ingest.walk(stream)
-    with ingest.open_scratch(walked.version) as scratch:
+    with ingest.open_scratch(walked.opening) as scratch:
         scratch.load(stream)
         ingest.audit(scratch, claimed, walked)
         registry = scratch.registries[facts["regk"]]
