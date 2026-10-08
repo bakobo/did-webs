@@ -8,6 +8,7 @@ that supplies the bad input and asserts the exact code (cc ledger #22).
 
 from __future__ import annotations
 
+import itertools
 import json
 
 import builders
@@ -17,7 +18,9 @@ import keri_api
 import pytest
 from bakobo.errors import BakoboError
 from keri import kering
-from keri.core import serdering
+from keri.app import habbing
+from keri.core import eventing as keventing
+from keri.core import parsing, serdering
 
 from didwebs import assemble, document, ingest
 from didwebs.did import parse as parse_did
@@ -162,8 +165,29 @@ def test_every_hosted_message_is_in_its_own_genus_with_a_counter_at_each_switch(
     read = _bodies(emitted)
 
     assert all(major == genus for major, genus in read)
-    switches = sum(1 for a, b in zip([(1, 1), *read], read, strict=False) if a[1] != b[1])
-    assert emitted.count(V1_GENUS) + emitted.count(V2_GENUS) == switches
+    switches = sum(1 for a, b in itertools.pairwise(read) if a[1] != b[1])
+    opening = 0 if {genus for _, genus in read} == {1} else 1  # pure v1 names no genus
+    assert emitted.count(V1_GENUS) + emitted.count(V2_GENUS) == switches + opening
+
+
+@pytest.mark.parametrize("knob", builders_mixed.POSITIVE)
+def test_a_hosted_mixed_stream_names_its_opening_genus(knob, tmp_path):
+    """A stream that carries both versions opens with an explicit counter even when it opens in
+    v1, so a reader whose parser starts in keripy's default genus, v2, still reaches the key
+    state we publish from (panel SEC-F3). A pure v1 stream keeps none: that is what the deployed
+    ecosystem reads."""
+    facts, _, emitted = _emitted(knob, tmp_path)
+    if {major for major, _ in _bodies(emitted)} == {1}:
+        assert not emitted.startswith(V1_GENUS)
+        return
+
+    hby = habbing.Habery(name="stranger", base="", temp=True)  # keripy's default genus
+    try:
+        kevery = keventing.Kevery(db=hby.db, lax=False, local=False)
+        parsing.Parser(framed=True).parse(ims=bytearray(emitted), kvy=kevery, local=False)
+        assert hby.kevers[facts["aid"]].sner.num == facts["kel_sn"]
+    finally:
+        hby.close(clear=True)
 
 
 def test_a_migrated_kel_is_hosted_v1_events_first_then_v2_then_its_v1_log(tmp_path):
@@ -174,7 +198,8 @@ def test_a_migrated_kel_is_hosted_v1_events_first_then_v2_then_its_v1_log(tmp_pa
         if body.get("i") == facts["aid"] and body.get("t") in {"icp", "ixn", "rot"}
     ]
     assert kel == ["KERI10", "KERI10", "KERI10", "KERICA", "KERICA"]
-    assert emitted.index(V2_GENUS) < emitted.index(V1_GENUS)
+    assert emitted.startswith(V1_GENUS)
+    assert emitted.index(V2_GENUS) < emitted.index(V1_GENUS, len(V1_GENUS))
 
 
 def test_the_hosted_mixed_stream_ends_on_an_attached_frame(tmp_path):

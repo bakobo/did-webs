@@ -78,6 +78,7 @@ __all__ = [
     "owns_reply",
     "require_complete_v1",
     "require_delegator",
+    "require_monotonic",
     "require_no_third_party",
     "require_ownership",
     "require_supported",
@@ -368,8 +369,13 @@ def walk(stream: bytes) -> Walk:
             # completed extraction yields a message (the genus_per_artifact fixture holds this).
             # keripy keeps the switch on the parser, and so does the walk: it lasts until the
             # next counter (decision 8686h4tf, rule 3).
-            genus = parser.version
+            genus = parser.version  # ~5zz7
             message = done.value
+            if message.nests:
+                # keripy extracts a message nested in an attachment group into `nests` and
+                # processes nothing in it, so it would vanish from every account (panel CSR-F2).
+                failure = WalkFailure(fault="format")
+                break
             try:
                 frames.append(
                     _frame(message.serder, message.sigers, message.bsqs, genus=genus.major)
@@ -391,29 +397,6 @@ def walk(stream: bytes) -> Walk:
             failure = _classify(residue)
             break
     return Walk(tuple(frames), failure, opening)
-
-
-def _regressed(walked: Walk) -> tuple[Frame, int] | None:
-    """The first key event at an older protocol version than an earlier event of its own KEL,
-    with the newer version it follows, or None (decision ``8686h4tf``, rule 2).
-
-    Earlier means a lower sequence number, never an earlier position in the stream: a stream may
-    carry a KEL out of order, and two events at one sequence number (a superseding recovery, or a
-    fork the audit refuses) are not one after the other.
-    """
-    by_aid: dict[str, list[Frame]] = {}
-    for frame in walked.frames:
-        if frame.is_kel:
-            by_aid.setdefault(frame.principal, []).append(frame)
-    for events in by_aid.values():
-        prior = 0  # the newest version at any lower sequence number
-        for sn in sorted({frame.sn for frame in events}):
-            at = [frame for frame in events if frame.sn == sn]
-            for frame in at:
-                if frame.major < prior:
-                    return frame, prior
-            prior = max(prior, *(frame.major for frame in at))
-    return None
 
 
 def _mismatched_registry(walked: Walk) -> tuple[Frame, int] | None:
@@ -443,9 +426,9 @@ def require_supported(did, walked: Walk) -> None:
 
     A message whose body is not the version of the genus it was read under is a format fault:
     it is inconsistent in itself, and it is also what a genus switch with no counter before it
-    looks like (decision ``8686h4tf``, rules 1 and 3). After those, the two rules a readable
-    mixed-version stream can still break: a KEL that returns to an older version, and a
-    credential naming a registry of another version.
+    looks like (decision ``8686h4tf``, rules 1 and 3). After those, a credential naming a
+    registry of another version (rule 4). Rule 2 is judged after parsing, by
+    :func:`require_monotonic`, because only keripy can say which events a KEL keeps.
     """
     faults = [] if walked.failure is None else [walked.failure]
     faults += [
@@ -469,11 +452,6 @@ def require_supported(did, walked: Walk) -> None:
     for frame in walked.frames:
         if frame.proto == ACDC and frame.ilk in REGISTRY_V2_REFUSED:
             raise errors.REGISTRY_EVENT_UNSUPPORTED(frame=frame.said, ilk=frame.ilk)
-    if (regressed := _regressed(walked)) is not None:
-        frame, prior = regressed
-        raise errors.KEL_VERSION_REGRESSED(
-            aid=frame.principal, said=frame.said, sn=frame.sn, version=frame.major, prior=prior
-        )
     if (mismatched := _mismatched_registry(walked)) is not None:
         frame, registry_version = mismatched
         raise errors.CREDENTIAL_REGISTRY_VERSION(
@@ -1165,6 +1143,32 @@ def require_complete_v1(scratch: Scratch, did, walked: Walk) -> None:
             raise errors.REGISTRY_EVENT_MISSING(aid=did.aid, regid=log, said=min(missing))
 
 
+def require_monotonic(scratch: Scratch, walked: Walk) -> None:
+    """Refuse a KEL whose protocol version decreases (decision ``8686h4tf``, rule 2).
+
+    Judged over the KEL keripy accepted, one event per sequence number, the one that stands
+    there: a superseded event is not part of the log's history going forward. Judging every
+    walked event instead let one interaction signed with an exposed key in v2, superseded by
+    the controller's v1 recovery rotation, force the controller into v2 for good (panel SEC-F1).
+
+    Raises:
+        BakoboError: ``e.rule.kel.version.regressed.f``, naming the first event that regresses.
+    """
+    db = scratch.hby.db
+    for aid in dict.fromkeys(frame.principal for frame in walked.frames if frame.is_kel):
+        kever = scratch.hby.kevers.get(aid)
+        if kever is None:
+            continue  # nothing accepted; accounting attributes it
+        prior = 0
+        for sn in range(kever.sner.num + 1):
+            serder = db.evts.get(keys=(aid, db.kels.getLast(keys=aid, on=sn)))
+            if serder.pvrsn.major < prior:
+                raise errors.KEL_VERSION_REGRESSED(
+                    aid=aid, said=serder.said, sn=sn, version=serder.pvrsn.major, prior=prior
+                )
+            prior = max(prior, serder.pvrsn.major)
+
+
 def audit(scratch: Scratch, did, walked: Walk) -> None:
     """Raise the error the accounting and escrow audits attribute, if the stream earns one.
 
@@ -1177,6 +1181,7 @@ def audit(scratch: Scratch, did, walked: Walk) -> None:
     conflicts = duplicitous(scratch, walked)
     if conflicts:
         raise errors.KEL_FORKED(aid=did.aid)
+    require_monotonic(scratch, walked)
     vet_registries(scratch, walked)
     for frame in account_frames(scratch, walked):
         raise attribute(scratch, frame)

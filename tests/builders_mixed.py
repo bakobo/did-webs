@@ -17,6 +17,7 @@ import builders
 import keri_api
 from keri.acdc import acdcmap
 from keri.core import coring, counting, serdering
+from keri.kering import Vrsn_1_0
 from keri.vc import proving
 
 from didwebs import assemble, schemaing
@@ -265,6 +266,64 @@ def moved_host(tmp_path) -> builders.Fixture:
         )
 
 
+def recovered_from_a_v2_exploit(tmp_path) -> builders.Fixture:
+    """A v1 KEL whose exposed signing key signed one v2 interaction, superseded by the
+    controller's v1 recovery rotation, after which the KEL carries on in v1. Rule 2 judges the
+    KEL keripy accepted, so the superseded v2 event does not force the controller into v2
+    (panel SEC-F1). Two keystores share a salt, as ``builders.recovered_kel`` does."""
+    trunk = builders.base(tmp_path / "trunk")
+
+    def branch(name, extend, keep):
+        with keri_api.scratch_mixed(name, tmp_path / name) as (hby, regery, _):
+            hab = keri_api.make_hab(hby, "controller")
+            builders._issue(hab, regery, keri_api.designated_ids(hab.pre))
+            extend(hab)
+            assert hab.pre == trunk.facts["aid"], "every branch must be the same AID"
+            return hab, kel_pieces(hby.db, hab.pre)[-keep:]
+
+    _, exploit = branch(
+        "exploit", lambda hab: hab.interact(data=[], version=V2, gvrsn=V2), 1
+    )
+
+    def recover(hab):
+        hab.rotate(version=Vrsn_1_0, gvrsn=Vrsn_1_0)
+        hab.interact(data=[], version=Vrsn_1_0, gvrsn=Vrsn_1_0)
+
+    hab, recovery = branch("recovery", recover, 2)
+    stream = trunk.stream + _runs([(1, b"")] + exploit + recovery)
+    return builders.Fixture(
+        stream,
+        {**trunk.facts, "knob": "recovered_from_a_v2_exploit", "expected_code": None,
+         "kel_sn": 4, "kel_version": 1, "current_key": hab.kever.verfers[0].qb64},
+    )
+
+
+def nested_message(tmp_path) -> builders.Fixture:
+    """A valid v1 publication whose first frame's attachment group also carries a whole other
+    message, nested as a ``-W`` body with its attachments. keripy extracts it into the parent's
+    ``nests`` and processes nothing in it, so without a refusal it would vanish unreported
+    (rule 5; panel CSR-F2). Not specific to mixed versions: the orphan is
+    ``builders.dropped_frame_candidate``'s."""
+    candidate = builders.dropped_frame_candidate(tmp_path)
+    parent = candidate.facts["parent_stream"]
+    orphan = keri_api.frames(candidate.stream[len(parent):])[0]
+    body = orphan.raw[orphan.start : orphan.body_end]
+    texter = coring.Texter(raw=body)
+    nested = (
+        counting.Counter(code="-W", count=len(texter.qb64b) // 4, version=V1).qb64b
+        + texter.qb64b + orphan.raw[orphan.body_end : orphan.end]
+    )
+    first = keri_api.frames(parent)[0]
+    group = counting.Counter(qb64b=parent[first.body_end :], version=V1)
+    inner = parent[first.body_end + group.fullSize : first.end]
+    enlarged = counting.Counter(code="-V", count=(len(inner) + len(nested)) // 4, version=V1)
+    stream = parent[: first.body_end] + enlarged.qb64b + inner + nested + parent[first.end :]
+    return builders.Fixture(
+        stream,
+        {**candidate.facts, "knob": "nested_message", "expected_code": "e.input.format.stream.f"},
+    )
+
+
 # ------------------------------------------------------------------------------- negative
 
 
@@ -372,6 +431,8 @@ KNOBS = {
     "delegator_migrated": delegator_migrated,
     "superseded_designation": superseded_designation,
     "moved_host": moved_host,
+    "recovered_from_a_v2_exploit": recovered_from_a_v2_exploit,
+    "nested_message": nested_message,
     "backslid": backslid,
     "switch_without_counter": switch_without_counter,
     "body_genus_disagrees": body_genus_disagrees,
@@ -383,6 +444,7 @@ KNOBS = {
 POSITIVE = (
     "migrated_v1_designation", "migrated_both_designations", "migrated_v1_revoked_v2_issued",
     "credential_last_after_a_switch",
-    "v1_kel_v2_registry", "v2_kel_v1_registry", "delegator_migrated", "superseded_designation", "moved_host",
+    "v1_kel_v2_registry", "v2_kel_v1_registry", "delegator_migrated",
+    "recovered_from_a_v2_exploit", "superseded_designation", "moved_host",
 )
 NEGATIVE = tuple(name for name in KNOBS if name not in POSITIVE)

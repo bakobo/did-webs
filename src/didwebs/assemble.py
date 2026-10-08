@@ -523,10 +523,14 @@ def _delegation_chain(db, kever) -> list[str]:
 def _runs(pieces) -> bytes:
     """Join ``(major, message)`` pieces into one stream, with a genus-version counter before the
     first message of every run in a genus other than the one before it (decision ``8686h4tf``,
-    rule 3). A stream starts in genus v1, as ingest reads one with no counter, so a v1
-    publication carries none and a v2 one exactly the one it opens with."""
+    rule 3). A stream with no counter is read in v1, so a v1 publication carries none, which is
+    what the deployed ecosystem reads, and a v2 one exactly the one it opens with. A stream that
+    carries both names its opening genus even when that is v1: a reader whose parser starts in
+    keripy's default genus, v2, would otherwise reach nothing (panel SEC-F3)."""
+    pieces = [(major, raw) for major, raw in pieces if raw]
     out = bytearray()
-    genus = V1.major
+    mixed = len({major for major, _ in pieces}) > 1
+    genus = None if mixed else V1.major
     for major, raw in pieces:
         if major != genus:
             out.extend(counting.Counter.makeGVC(version=_genus(major)))
