@@ -521,23 +521,100 @@ Production did:webs implementation on KERI = goal:
         it (panel CSR-F1, SKP-F4).
       children:
 
-        The version is read from the stream, and one stream is one version = decision:
+        The version is read from each message, and a KEL may migrate from v1 to v2 = decision:
           nid: 8686h4tf
           why: >
             `didwebs publish` takes no protocol flag: CESR is self-describing, a v2 stream opens
             with its genus-version counter, and every body carries its own version string, so a
             resolver must read the version from the bytes anyway and a publisher that asked
-            instead would let the flag and the bytes disagree. A stream whose frames do not all
-            share one major version is refused (e.input.format.stream.f) — a v1 KEL anchoring a
-            v2 registry, or the reverse. Neither spec forbids that mix: the KERI spec scopes the
-            version string to "the associated message" (kswg-keri-specification
-            spec-body.md:267 at 4df80aa), keripy never re-checks a Kever's version after
-            inception (eventing.py:2028), and the ACDC spec requires v2 verifiers to read v1
-            bodies (spec-body.md:68 at f0bd097). Refusing is therefore a choice, made because
-            no deployed resolver has been shown to handle a mixed stream and an undefined
-            combination should fail closed until the spec defines it. The spec proposal raises
-            it. Accepted tradeoff: a controller whose KEL migrates from v1 to v2 mid-life cannot
-            publish here yet.
+            instead would let the flag and the bytes disagree. A stream is read in genus v1 unless
+            it opens with the v2 genus-version counter, and a counter anywhere in it switches the
+            genus for the messages that follow.
+
+            As first recorded, this node said one stream is one version: a stream whose frames did
+            not all share one major version was refused (e.input.format.stream.f), as a fail-closed
+            choice, with the accepted tradeoff that a controller whose KEL migrates from v1 to v2
+            mid-life could not publish here. Daniel reversed it on 2026-10-06 (item Q-Q093), and
+            that tradeoff is the reason. A did:webs DID contains the AID, so if moving to v2 required
+            a new AID the controller's DID would change and every credential naming it would be
+            stranded; continuity of identity across a protocol change is the point of the method.
+            Neither spec forbids the mix: the KERI spec scopes the version string to "the
+            associated message" (kswg-keri-specification spec-body.md:267 at 4df80aa), and the ACDC
+            spec requires v2 verifiers to read v1 bodies (spec-body.md:68 at f0bd097). keripy at our
+            pin accepts a KEL that incepts in v1 and rotates into v2, whichever genus a stranger's
+            Parser starts in (probe 2026-10-06, re-run 2026-10-07).
+
+            So a KEL that mixes v1 and v2 events is canonical and normal, under five rules. (1) Each
+            message is consistent in itself: its body's major version is the genus in effect when it
+            is read, or the stream is unwalkable (e.input.format.stream.f). (2) Within one AID's KEL
+            the version never decreases (e.rule.kel.version.regressed.f). That is not a
+            cryptographic need, since each event is signed in its own serialization; keripy chooses
+            the version per call site and defaults to v2 (qbqfst), so accidental flip-flopping is
+            realistic, and refusing it costs one comparison. (3) A genus-version counter precedes
+            the first message of each run in a different genus; rule 1 is what enforces it, since a
+            message read under the wrong genus disagrees with that genus. (4) A credential and its
+            registry share one version, a v1 credential naming a vcp/iss registry with `ri` and a v2
+            one naming a rip/bup registry with `rd` (e.rule.credential.registry.version.f). Every
+            other combination is fine, a v1 KEL anchoring a v2 registry or a migrated KEL keeping
+            its v1 designation among them. (5) A resolver refuses what it cannot parse rather than
+            dropping it. That is a spec ask (trustoverip/kswg-did-method-webs-specification#216,
+            question 2), and here it binds only as never dropping a frame silently, which frame
+            accounting already guarantees.
+
+            Each log is judged in its own version: v1 transaction events by keripy's Tevery, v2
+            registries by vetBinds, and completeness per log under that log's anchor rule. The
+            anchor rule follows the version of the event anchored, not of the KEL event anchoring
+            it, because the engine that verifies the anchored event is the one that reads the seal
+            (Tever.verifyAnchor, keri/vdr/eventing.py:1299; regeventing.sealDigests,
+            keri/acdc/regeventing.py:272). The hosted stream replays every message in its own genus
+            with a counter at each switch, so a publication in one version is byte-identical to
+            what it was before this amendment. The keystore-side refusal e.rule.stream.version.f,
+            which kept a v1 controller from issuing a v2 designation, is no longer raised and is
+            never reused; it has no successor because the case it refused is now allowed.
+
+            Risk checked: Kever.version stays at the inception version after a v2 rotation, but at
+            our pin keripy only ever writes it (keri/core/eventing.py:2059, :2302), Kever.state
+            reports the latest event's serder.pvrsn (:3932), and this repo never reads it. Accepted
+            tradeoff: no deployed v1-only resolver can read a migrated KEL's publication, GLEIF's
+            included. The crossimpl oracle holds such a resolver to refusing it or deriving a
+            document unequal to ours, which the spec's did.json equality check then refuses; it
+            must never read the pre-migration key state as current.
+
+          children:
+
+            Any valid, unrevoked designation authorizes, and the document reflects them all = decision:
+              nid: 7p6j5kde
+              why: >
+                Once a KEL can migrate, one stream routinely carries two designated-aliases
+                credentials, the v1 one issued before migration and a v2 one after, and a
+                controller who moves host may also keep an old designation standing. Resolution
+                step 4 asks that "a valid, unrevoked designated aliases ACDC ... authorizes" the
+                DID (kswg-did-method-webs-specification spec/body.md:350-352 at 2d84ef2), which is
+                existential. So a publication is authorized when any designation that is the
+                claimed AID's, unrevoked, and covering both spellings of the DID exists, whatever
+                its version and wherever it sits in the stream. The code this replaces took the
+                first of the AID's designations in stream order and refused if that one was revoked
+                or out of scope, so a later, standing designation could not rescue it and the verdict
+                depended on frame order. When none qualifies, the error names the furthest any
+                candidate got: out of scope if an unrevoked one exists, revoked otherwise.
+
+                The document reflects the union of the `a.ids` of every valid, unrevoked
+                designation of the claimed AID, whether or not it covers the DID being resolved
+                ("Authorized identifiers MUST be reflected", spec/body.md:1959). A controller who
+                moves host and keeps the old designation standing is the case: the spec wants the
+                old location kept as an equivalentId (spec/body.md:227-230), and only the old
+                designation names it. Entries are ordered by the sequence number
+                of the KEL event anchoring the registry event that put each designation's state in
+                force (v1 `iss`, v2 the latest non-vacuous `bup`), then by position within each
+                credential, with duplicates dropped, so that two resolvers derive the same
+                alsoKnownAs. Rejected
+                reflecting only the designation that authorized the resolution: which one that is
+                would depend on the order a resolver examines them. Rejected letting the latest
+                designation govern, so that revoking it withdraws authorization while an older one
+                stands: revoking the older one is how a controller withdraws it, and the spec's text
+                is existential. Daniel took this reading on 2026-10-07 (item Q-A13W) pending the
+                spec group's answer to an issue he files; if the group picks another, this node
+                changes.
 
         A v2 registry is rip and bup, and every bup carries its disclosure = constraint:
           nid: 3kn6drgf
