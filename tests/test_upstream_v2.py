@@ -20,6 +20,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import builders_mixed
 import builders_v2
 import pytest
 from upstream import keripy_venv
@@ -146,7 +147,7 @@ def test_upstream_vets_every_emitted_v2_stream_as_issued_and_mutually_bound(
     report = run_upstream(emitted, tmp_path / "upstream")
 
     assert "error" not in report, f"upstream keripy refused the emitted {knob!r} stream: {report}"
-    designation = [r for r in report["records"] if r["regid"] == facts["regk"]]
+    designation = [r for r in report["records"] if r.get("regid") == facts["regk"]]
     assert designation, f"upstream found no designation registry in {knob!r}: {report}"
     assert designation[0] == {
         "regid": facts["regk"],
@@ -155,6 +156,28 @@ def test_upstream_vets_every_emitted_v2_stream_as_issued_and_mutually_bound(
         "binding": "mutual",
         "acdc": facts["acdc_said"],
     }
+
+
+@pytest.mark.parametrize("knob", builders_mixed.POSITIVE)
+def test_upstream_reaches_the_key_state_of_every_emitted_mixed_stream(knob, tmp_path, venv_guard):
+    """A KEL that migrated from v1 to v2 (8686h4tf as amended): upstream must reach the same
+    latest event we publish the document from, in the same version, and vet every v2 registry
+    in the stream as issued and mutually bound to a designation we published. Its v1 logs are
+    beyond this oracle; the GLEIF one reads v1."""
+    stream, facts = builders_mixed.KNOBS[knob](tmp_path / "fixture")
+    with ingest.ingest(stream, parse_did(facts["did_webs"])) as verified:
+        emitted = assemble.emit_stream(verified)
+        published = {creder.said for creder in verified.designations}
+
+    report = run_upstream(emitted, tmp_path / "upstream")
+
+    assert "error" not in report, f"upstream keripy refused the emitted {knob!r} stream: {report}"
+    kel = [r for r in report["records"] if r.get("kel") == facts["aid"]]
+    assert kel == [{"kel": facts["aid"], "sn": facts["kel_sn"], "version": facts["kel_version"]}]
+    for registry in (r for r in report["records"] if "regid" in r):
+        assert registry["state"] in {"issued", "revoked"}, registry
+        if registry["state"] == "issued":
+            assert registry["binding"] == "mutual" and registry["acdc"] in published, registry
 
 
 def test_upstream_also_refuses_a_registry_updated_with_upd(tmp_path, venv_guard):

@@ -1,7 +1,7 @@
 """Ingesting a KERI protocol v2 publication stream.
 
-Decisions 0plkq8s8 (the community's v2), 8686h4tf (the version is read from the stream; one
-stream is one version) and 3kn6drgf (rip + bup, every bup disclosed). The v1 pipeline is the
+Decisions 0plkq8s8 (the community's v2), 8686h4tf (the version is read from the stream, message
+by message; streams that mix versions are tests/test_mixed.py's) and 3kn6drgf (rip + bup, every bup disclosed). The v1 pipeline is the
 model: the same walk, accounting audit, authorization and ownership steps, with the v2 registry
 vetted by ``keri.acdc.regeventing.vet`` where v1 relies on keripy's Tevery and Verifier.
 
@@ -69,8 +69,8 @@ def test_the_v2_negative_matrix_attributes_the_exact_code(knob, tmp_path):
 
 
 def test_a_v1_stream_carrying_v2_frames_is_refused_as_a_format_fault(tmp_path):
-    """The reverse of the ``mixed_versions`` knob: no v2 genus counter up front, so the stream
-    is read as v1 and the appended v2 frames cannot be."""
+    """The reverse of the ``mixed_versions`` knob: no v2 genus counter before the v2 frames, so
+    they are read in the v1 genus the stream opened in, and cannot be (8686h4tf, rule 3)."""
     v1 = builders_v2.builders.base(tmp_path / "v1")
     v2 = builders_v2.base(tmp_path / "v2")
 

@@ -212,8 +212,8 @@ def stranger_bundle(tmp_path) -> builders.Fixture:
 
 
 def mixed_versions(tmp_path) -> builders.Fixture:
-    """A valid v2 publication with a valid v1 one appended: one stream, two major versions
-    (8686h4tf)."""
+    """A valid v2 publication with a valid v1 one appended and no counter switching back to v1,
+    so its v1 bodies are read under genus v2 (8686h4tf, rules 1 and 3)."""
     v1 = builders.base(tmp_path / "v1")
     fixture = base(tmp_path / "v2")
     facts = {**fixture.facts, "knob": "mixed_versions", "expected_code": "e.input.format.stream.f"}

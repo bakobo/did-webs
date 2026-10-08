@@ -90,6 +90,7 @@ def _migrated(hby, regery):
 def _facts(knob, hab, expected_code=None, **extra):
     extra.setdefault("ids", keri_api.designated_ids(hab.pre))
     extra.setdefault("current_key", hab.kever.verfers[0].qb64)
+    extra.setdefault("kel_version", hab.kever.serder.pvrsn.major)
     return builders._facts(
         knob, hab.pre, kel_sn=hab.kever.sner.num, expected_code=expected_code, **extra
     )

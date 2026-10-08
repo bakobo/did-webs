@@ -28,8 +28,8 @@ from didwebs import errors
 #: also an assertion that they *are* module-scope literals, since nothing else would be found.
 REGISTRY = {entry.code: entry for _, entry in vars(errors).items() if isinstance(entry, ErrorCode)}
 
-#: The set docs/design.md's "Error codes" table names, verbatim. Nineteen rows, twenty-two codes:
-#: the table writes ``e.proof.stream.*.f`` once and names its four leaves in the same cell.
+#: The set docs/design.md's "Error codes" table names, verbatim. Twenty-five rows, twenty-nine
+#: codes: the table writes ``e.proof.stream.*.f`` once and names its five leaves in the same cell.
 DESIGN_TABLE = frozenset(
     {
         "e.input.range.stream.f",
