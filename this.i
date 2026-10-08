@@ -570,10 +570,13 @@ Production did:webs implementation on KERI = goal:
             question 2), and here it binds only as never dropping a frame silently. Frame
             accounting guarantees that for every message the walk sees; a message nested inside
             another's attachment group, which keripy extracts and then processes nothing of, is
-            refused as unwalkable so that it cannot vanish either (panel CSR-F2). A spec-legal
-            genus override enclosed in a body-with-attachments group is refused too, since the
-            walk cannot yet tell which genus the enclosed message was read under; that fails
-            closed (tick ~5zz7, panel CSR-F1).
+            refused as unwalkable so that it cannot vanish either (panel CSR-F2), and so is an
+            attachment group nested in another, which keripy flushes unread. A spec-legal genus
+            override enclosed in a body-with-attachments or generic group is refused too, since
+            the walk cannot yet tell which genus the enclosed message was read under; that fails
+            closed (tick ~5zz7, panel CSR-F1). As first built only the genus mismatch caught it,
+            and a v1 body with v2 attachments under such an override passed (hostile pass on
+            PR #13).
 
             Each log is judged in its own version: v1 transaction events by keripy's Tevery, v2
             registries by vetBinds, and completeness per log under that log's anchor rule. The
