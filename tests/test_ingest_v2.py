@@ -1,7 +1,7 @@
 """Ingesting a KERI protocol v2 publication stream.
 
-Decisions 0plkq8s8 (the community's v2), 8686h4tf (the version is read from the stream; one
-stream is one version) and 3kn6drgf (rip + bup, every bup disclosed). The v1 pipeline is the
+Decisions 0plkq8s8 (the community's v2), 8686h4tf (the version is read from the stream, message
+by message; streams that mix versions are tests/test_mixed.py's) and 3kn6drgf (rip + bup, every bup disclosed). The v1 pipeline is the
 model: the same walk, accounting audit, authorization and ownership steps, with the v2 registry
 vetted by ``keri.acdc.regeventing.vet`` where v1 relies on keripy's Tevery and Verifier.
 
@@ -38,10 +38,10 @@ def test_a_valid_v2_publication_verifies(knob, tmp_path):
     stream, facts = builders_v2.KNOBS[knob](tmp_path)
 
     with ingest.ingest(stream, _claimed(facts)) as verified:
-        assert verified.version == keri_api.V2
+        assert {frame.major for frame in verified.frames} == {keri_api.V2.major}
         assert verified.aid == facts["aid"]
-        assert verified.acdc.said == facts["acdc_said"]
-        assert verified.acdc.attrib["ids"] == facts["ids"]
+        assert verified.designations[0].said == facts["acdc_said"]
+        assert verified.ids == facts["ids"]
         doc = document.derive_document(verified, _claimed(facts))
 
     assert doc["id"] == facts["did_webs"]
@@ -69,8 +69,8 @@ def test_the_v2_negative_matrix_attributes_the_exact_code(knob, tmp_path):
 
 
 def test_a_v1_stream_carrying_v2_frames_is_refused_as_a_format_fault(tmp_path):
-    """The reverse of the ``mixed_versions`` knob: no v2 genus counter up front, so the stream
-    is read as v1 and the appended v2 frames cannot be."""
+    """The reverse of the ``mixed_versions`` knob: no v2 genus counter before the v2 frames, so
+    they are read in the v1 genus the stream opened in, and cannot be (8686h4tf, rule 3)."""
     v1 = builders_v2.builders.base(tmp_path / "v1")
     v2 = builders_v2.base(tmp_path / "v2")
 
@@ -91,7 +91,7 @@ def test_a_v2_stream_whose_final_frame_carries_no_attachment_still_walks(tmp_pat
     reordered = stream.replace(acdc.serder.raw, b"") + acdc.serder.raw
 
     with ingest.ingest(reordered, _claimed(facts)) as verified:
-        assert verified.acdc.said == facts["acdc_said"]
+        assert verified.designations[0].said == facts["acdc_said"]
 
 
 def test_the_v2_walk_records_each_registry_frame_under_its_registry(tmp_path):
@@ -116,7 +116,7 @@ def test_verified_state_carries_each_vetted_registry_with_its_disclosures(tmp_pa
     claimed = _claimed(facts)
 
     walked = ingest.walk(stream)
-    with ingest.open_scratch(walked.version) as scratch:
+    with ingest.open_scratch(walked.opening) as scratch:
         scratch.load(stream)
         ingest.audit(scratch, claimed, walked)
         registry = scratch.registries[facts["regk"]]

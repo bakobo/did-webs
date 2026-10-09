@@ -8,15 +8,21 @@ than of our fork's.
 The verification is upstream's own party-side verifier, ``keri.acdc.regeventing.vet``:
 
 1. The KEL is parsed into a fresh temporary ``Habery`` by upstream's ``Parser`` and ``Kevery``,
-   strict (``lax=False``) and as remote material (``local=False``).
-2. Every message is walked with ``Parser.msgParsator``, genus pinned to v2.
+   strict (``lax=False``) and as remote material (``local=False``), in the genus the stream
+   opens in: v2 when it opens with the v2 genus-version counter, v1 otherwise. A KEL may
+   migrate from v1 to v2 (didwebs decision ``8686h4tf``), and a counter anywhere in the stream
+   switches the genus for what follows, which upstream's own parser honours.
+2. Every message is walked with ``Parser.msgParsator`` the same way, the genus carried from
+   one message to the next.
 3. For each ``rip``, every registry update in the stream naming that registry (``bup`` *and*
    ``upd`` -- the script passes along whatever the stream carries and lets upstream decide), the
    ``acm`` naming it, and every disclosure the stream carries go to ``vetBinds``, the issuer-
    registry verifier keripy's own IPEX uses; a registry with no updates goes to ``vet``.
 
 Usage: ``python vet_stream.py STREAM``. On success prints one JSON line per registry,
-``{"regid", "issuer", "state", "binding", "acdc"}``, and exits 0. When upstream refuses
+``{"regid", "issuer", "state", "binding", "acdc"}``, then one per key event log upstream
+accepted, ``{"kel", "sn", "version"}`` with the sequence number and protocol major of its latest
+event, and exits 0. When upstream refuses
 anything, prints one JSON line ``{"error": <exception class name>, "message": ...}`` and exits
 1. The caller owns the wall-clock timeout.
 
@@ -33,11 +39,11 @@ from pathlib import Path
 
 from keri.acdc import regeventing
 from keri.app.habbing import Habery
-from keri.core import Blinder, BlindState, SerderACDC
+from keri.core import Blinder, BlindState, SerderACDC, counting
 from keri.core.eventing import Kevery
 from keri.core.parsing import Parser
 from keri.db.dbing import LMDBer
-from keri.kering import Ilks, ShortageError, Vrsn_2_0
+from keri.kering import Ilks, ShortageError, Vrsn_1_0, Vrsn_2_0
 
 #: Registry update ilks handed to upstream's ``vet``. ``upd`` is here on purpose: whether an
 #: ``upd`` is acceptable is upstream's call, and this oracle exists to observe it.
@@ -50,6 +56,15 @@ class Bare:
     def __init__(self, serder):
         self.serder = serder
         self.bsqs = []
+
+
+#: The counter a stream opens with when it opens in genus v2.
+GENUS_V2 = bytes(counting.Counter.makeGVC(version=Vrsn_2_0))
+
+
+def opening(stream: bytes):
+    """The genus ``stream`` opens in: v2 behind the v2 counter, v1 otherwise."""
+    return Vrsn_2_0 if stream.startswith(GENUS_V2) else Vrsn_1_0
 
 
 def contain_temp_stores() -> None:
@@ -65,25 +80,28 @@ def contain_temp_stores() -> None:
 
 
 def messages(stream: bytes) -> list:
-    """Every message in ``stream`` with its extracted attachments, genus pinned to v2.
+    """Every message in ``stream`` with its extracted attachments, in the genus in effect.
 
     A framed extractor raises ``ShortageError`` rather than waiting for bytes, so the walk
     always terminates. upstream's extractor cannot finish a final frame that carries no
     attachments -- it peeks for one and finds end of stream -- so when the remainder is exactly
-    one complete ACDC-family body, it is read as that body, unattached. Anything else short is
-    upstream's refusal, and propagates.
+    one complete ACDC-family body, behind a v2 counter or not, it is read as that body,
+    unattached. Anything else short is upstream's refusal, and propagates.
     """
     ims, found = bytearray(stream), []
-    parser = Parser(framed=True, version=Vrsn_2_0)
+    genus = opening(stream)
+    parser = Parser(framed=True, version=genus)
     while ims:
         remainder = bytes(ims)  # the extractor strips the body before it peeks for attachments
-        extractor = parser.msgParsator(ims=ims, framed=True, local=False, version=Vrsn_2_0)
+        extractor = parser.msgParsator(ims=ims, framed=True, local=False, version=genus)
         try:
             while True:
                 next(extractor)
         except StopIteration as done:  # returns None only when piped, which this never is
+            genus = parser.version  # a counter before the message switched it, until the next
             found.append(done.value)
         except ShortageError:
+            remainder = remainder.removeprefix(GENUS_V2)
             serder = SerderACDC(raw=remainder)
             if serder.size != len(remainder):
                 raise
@@ -117,10 +135,10 @@ def latest_target(updates: list, blinders: list) -> str:
 
 def vet_all(stream: bytes, *, name: str = "upstream-oracle") -> list[dict]:
     """Vet every registry in ``stream`` with upstream keripy; one record per registry."""
-    hby = Habery(name=name, base="", temp=True, version=Vrsn_2_0)
+    hby = Habery(name=name, base="", temp=True, version=opening(stream))
     try:
         kevery = Kevery(db=hby.db, lax=False, local=False)
-        Parser(framed=True, version=Vrsn_2_0).parse(
+        Parser(framed=True, version=opening(stream)).parse(
             ims=bytearray(stream), kvy=kevery, local=False
         )
         found = messages(stream)
@@ -158,6 +176,10 @@ def vet_all(stream: bytes, *, name: str = "upstream-oracle") -> list[dict]:
                     "binding": record.binding,
                     "acdc": record.acdc,
                 }
+            )
+        for pre, kever in sorted(hby.kevers.items()):
+            records.append(
+                {"kel": pre, "sn": kever.sner.num, "version": kever.serder.pvrsn.major}
             )
         return records
     finally:

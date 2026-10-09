@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 
 import builders
+import builders_mixed
 import pytest
 from crossimpl import compare, resolver_venv, runner
 
@@ -46,6 +47,15 @@ REQUIRED_VALUE = "required"
 #: deployed ecosystem accepts such a stream is exactly the question the spec leaves open
 #: (tick `~4gab`). The report that prompted the decision could only trace it; this runs it.
 ORACLE_FIXTURES = ("base", "endpoints", "deactivated", "two_registries", "recovered_kel")
+
+
+#: Mixed-version publications (decision ``8686h4tf`` as amended): every positive knob of
+#: :mod:`builders_mixed` whose stream carries both versions. The other two are pure v1, and are
+#: held to their own tests below.
+MIXED_FIXTURES = tuple(
+    knob for knob in builders_mixed.POSITIVE
+    if knob not in {"superseded_designation", "moved_host"}
+)
 
 
 def _venv_guard() -> None:
@@ -245,3 +255,67 @@ def test_the_resolver_subprocess_strands_no_keri_temp_directory(tmp_path, venv_g
     for path in report["store_paths"]:
         assert head in Path(path).parents, f"{path} escaped the head the runner named"
     assert not head.exists()
+
+
+@pytest.mark.parametrize("knob", MIXED_FIXTURES)
+def test_the_reference_refuses_or_disagrees_on_every_mixed_publication(knob, tmp_path, venv_guard):
+    """The deployed v1 ecosystem cannot read v2, so it cannot read a migrated KEL; what this
+    oracle holds it to is never misreading one unnoticed (8686h4tf's accepted tradeoff). Either
+    the reference refuses the stream, or the document it derives disagrees with ours on the
+    intersection, which the spec's equality check against the hosted did.json then refuses.
+
+    Measured 2026-10-07 against the pinned resolver, and the reason this matters: on a migrated
+    KEL it reports INGESTED, stops at the last v1 event, and derives a document naming the
+    rotated-out key, with no designations. Only the disagreement stands between that and a
+    stale key read as current, which is why the spec proposal asks resolvers to refuse what
+    they cannot parse (trustoverip/kswg-did-method-webs-specification#216, question 2)."""
+    stream, facts = builders_mixed.KNOBS[knob](tmp_path)
+    did = parse_did(facts["did_webs"])
+    ours, emitted = _emit(stream, did)
+
+    report = runner.run(
+        emitted, aid=facts["aid"], did=facts["did_webs"], tmp_path=tmp_path / "resolver"
+    )
+
+    if report["verdict"] == "INGESTED":
+        result = compare.compare(ours, report["did_doc"], subject_did_webs=facts["did_webs"])
+        print(result.render())
+        assert not result.ok, f"the reference agreed with us on a mixed {knob!r} stream"
+
+
+def test_a_standing_designation_of_an_old_host_agrees_with_the_reference(tmp_path, venv_guard):
+    """A pure-v1 publication with two standing designations, which the reference reads like any
+    other (7p6j5kde): the document reflects both."""
+    stream, facts = builders_mixed.moved_host(tmp_path)
+    did = parse_did(facts["did_webs"])
+    ours, emitted = _emit(stream, did)
+
+    report = runner.run(
+        emitted, aid=facts["aid"], did=facts["did_webs"], tmp_path=tmp_path / "resolver"
+    )
+
+    assert report["verdict"] == "INGESTED", report.get("error") or report.get("did_doc_error")
+    result = compare.compare(ours, report["did_doc"], subject_did_webs=facts["did_webs"])
+    print(result.render())
+    assert result.ok, result.render()
+
+
+def test_the_reference_fails_closed_on_a_revoked_designation_beside_a_standing_one(
+    tmp_path, venv_guard
+):
+    """A pure-v1 publication that 7p6j5kde lets us publish and the reference cannot read: one
+    designation revoked, a later one standing. The pinned resolver raises while listing
+    designations (``dws/core/didding.py``, ``gen_designated_aliases``: a revoked credential
+    contributes None to the chain it flattens), so it derives no document at all. That is a
+    refusal, not a misreading. If the reference is fixed, this fails, and the case belongs in
+    ORACLE_FIXTURES instead."""
+    stream, facts = builders_mixed.superseded_designation(tmp_path)
+    did = parse_did(facts["did_webs"])
+    _, emitted = _emit(stream, did)
+
+    report = runner.run(
+        emitted, aid=facts["aid"], did=facts["did_webs"], tmp_path=tmp_path / "resolver"
+    )
+
+    assert report["verdict"] != "INGESTED"
+    assert "gen_designated_aliases" in (report.get("did_doc_traceback") or ""), report

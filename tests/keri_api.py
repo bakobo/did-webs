@@ -206,6 +206,21 @@ def scratch_v2(name: str, tmp_path, *, salt_raw: bytes = CONTROLLER_SALT):
             shutil.rmtree(root, ignore_errors=True)
 
 
+@contextmanager
+def scratch_mixed(name: str, tmp_path, *, salt_raw: bytes = CONTROLLER_SALT):
+    """Yield ``(hby, regery, rgy)``: one keystore with both registry stores, the v1 vdr ``Regery``
+    and the v2 ``keri.acdc`` one, for a controller whose KEL migrates and who issues in both
+    versions (decision ``8686h4tf``)."""
+    with scratch(name, tmp_path, salt_raw=salt_raw) as (hby, regery):
+        rgy = acdcing.Regery(hby=hby, name=hby.name, base=hby.base, temp=True)
+        root = _temp_root(rgy.baser)
+        try:
+            yield hby, regery, rgy
+        finally:
+            rgy.close()
+            shutil.rmtree(root, ignore_errors=True)
+
+
 def make_hab_v2(hby: habbing.Habery, name: str, **kwa) -> habbing.Hab:
     """Make a Hab with protocol v2 pinned, the v2 counterpart of :func:`make_hab`."""
     params = {"icount": 1, "isith": "1", "ncount": 1, "nsith": "1", "transferable": True}

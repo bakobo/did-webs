@@ -28,8 +28,8 @@ from didwebs import errors
 #: also an assertion that they *are* module-scope literals, since nothing else would be found.
 REGISTRY = {entry.code: entry for _, entry in vars(errors).items() if isinstance(entry, ErrorCode)}
 
-#: The set docs/design.md's "Error codes" table names, verbatim. Nineteen rows, twenty-two codes:
-#: the table writes ``e.proof.stream.*.f`` once and names its four leaves in the same cell.
+#: The set docs/design.md's "Error codes" table names, verbatim. Twenty-five rows, twenty-nine
+#: codes: the table writes ``e.proof.stream.*.f`` once and names its five leaves in the same cell.
 DESIGN_TABLE = frozenset(
     {
         "e.input.range.stream.f",
@@ -40,6 +40,8 @@ DESIGN_TABLE = frozenset(
         "e.proof.stream.disclosure.f",
         "e.input.missing.registry.event.f",
         "e.rule.stream.version.f",
+        "e.rule.kel.version.regressed.f",
+        "e.rule.credential.registry.version.f",
         "e.self.anchor.registry.f",
         "e.input.missing.alias-acdc.f",
         "e.input.missing.delegator.f",
@@ -81,14 +83,14 @@ def values_for(entry: ErrorCode) -> dict:
 def test_the_registry_declares_exactly_the_codes_the_design_table_names():
     """The gate, in both directions.
 
-    A twenty-eighth code minted in ``didwebs/errors.py`` and not added to :data:`DESIGN_TABLE` shows
+    A thirtieth code minted in ``didwebs/errors.py`` and not added to :data:`DESIGN_TABLE` shows
     up in ``REGISTRY`` and fails this equality — because the set is *found*, not restated, so a
     new declaration cannot be invisible to it. A code named here and deleted from the module
     fails it too, which is what stops a shipped code being quietly retired. Either way the fix is
     the same and it is the right one: reconcile ``docs/design.md``'s table, then this set.
     """
     assert set(REGISTRY) == DESIGN_TABLE
-    assert len(DESIGN_TABLE) == 27
+    assert len(DESIGN_TABLE) == 29
 
 
 def test_no_two_names_in_the_module_declare_the_same_code():

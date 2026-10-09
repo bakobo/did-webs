@@ -160,16 +160,6 @@ def test_revocation_appends_a_bup_disclosing_revoked(tmp_path):
     assert _vet_from_bytes(stream).state == "revoked"
 
 
-def test_v2_issuance_refuses_a_v1_controller(tmp_path):
-    """One stream is one version (8686h4tf): a v2 registry anchored in a v1 KEL is refused at
-    the source rather than published and refused at ingest."""
-    with keri_api.scratch_v2("issuer", tmp_path) as (hby, rgy):
-        hab = keri_api.make_hab(hby, "controller")  # v1
-        with pytest.raises(BakoboError) as caught:
-            assemble.issue_aliases_v2(hab, rgy, keri_api.designated_ids(hab.pre))
-    assert caught.value.code == "e.rule.stream.version.f"
-
-
 def test_the_keystore_stream_is_not_a_serder_dump(tmp_path):
     """The replayed KEL carries its controller signatures: a body-only KEL would vet nothing."""
     _, _, _, stream = _issue(tmp_path)

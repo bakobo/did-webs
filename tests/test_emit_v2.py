@@ -38,7 +38,7 @@ def test_the_hosted_stream_re_ingests_to_the_same_document(knob, tmp_path):
 
     with ingest.ingest(emitted, _claimed(facts)) as again:
         assert document.derive_document(again, _claimed(facts)) == doc
-        assert again.acdc.said == facts["acdc_said"]
+        assert again.designations[0].said == facts["acdc_said"]
 
 
 def test_the_hosted_stream_opens_with_the_v2_genus_and_ends_on_an_attached_update(tmp_path):
@@ -92,7 +92,7 @@ def test_publish_detects_v2_and_writes_both_artifacts(tmp_path, capsys):
     hosted = json.loads(pathlib.Path(did_json).read_text(encoding="utf-8"))
     assert hosted["id"] == facts["did_web"]
     with ingest.ingest(pathlib.Path(keri_cesr).read_bytes(), _claimed(facts)) as again:
-        assert again.version == keri_api.V2
+        assert {frame.major for frame in again.frames} == {keri_api.V2.major}
 
 
 def test_publish_has_no_protocol_flag(tmp_path, capsys):

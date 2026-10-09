@@ -290,7 +290,7 @@ def test_a_designation_spelled_differently_is_still_the_documents_own_subject(tm
         doc = document.derive_document(verified, did)
 
     assert doc["id"] not in doc["alsoKnownAs"]
-    assert doc["id"] != verified.acdc.attrib["ids"][1]  # spelled differently, same identifier
+    assert doc["id"] != verified.ids[1]  # spelled differently, same identifier
     assert len(doc["alsoKnownAs"]) == 2  # the did:web form, then did:keri
 
 

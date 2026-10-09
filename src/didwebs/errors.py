@@ -7,14 +7,17 @@ import time rather than described in prose. Codes classify by *meaning*, never b
 raised them (dev/standards/error-codes.md, "Minting a code"): no `didwebs`-specific component
 name appears in any code.
 
-The 27 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
+The 29 codes below are verbatim from docs/design.md's "Error codes" table. Nineteen of them come
 from that table's rev 2 (2026-08-14); `e.input.range.stream.f` was added with the stream door
 (constraint `adyiw2mm`), and `e.self.corrupt.did.f` with the artifact-join containment check
 (constraint `a2sbz34i`), and `e.self.corrupt.witness-replay.f` with the interop replay
 (decision `t3q6azxm`), and `e.feature.unsupported.registry.event.f`,
 `e.proof.stream.disclosure.f`, `e.input.missing.registry.event.f`,
 `e.rule.stream.version.f` and `e.self.anchor.registry.f` with KERI protocol v2 (decisions
-`0plkq8s8`, `3kn6drgf`, `8686h4tf`). The
+`0plkq8s8`, `3kn6drgf`, `8686h4tf`), and `e.rule.kel.version.regressed.f` and
+`e.rule.credential.registry.version.f` when a KEL became free to migrate from v1 to v2
+(`8686h4tf` as amended 2026-10-07), which also left `e.rule.stream.version.f` declared and no
+longer raised. The
 table carries fewer rows than codes, because `e.proof.stream.*.f` is written once and names its
 five leaves — `sig`, `seal`, `anchor`, `frame`, `disclosure` — in the same cell, the audit
 picking between them by which escrow held the frame or which registry check refused it.
@@ -129,7 +132,36 @@ STREAM_VERSION_MIXED = ErrorCode(
     hint="Issue a v2 designation from a controller whose key event log is protocol v2, or a v1 "
     "designation from this one.",
 )
-# Decision 8686h4tf, enforced at the keystore side so a mixed stream is never produced at all.
+# Decision 8686h4tf as first recorded, which refused any stream mixing versions. The amendment of
+# 2026-10-07 allows a v1 KEL to anchor a v2 registry, so nothing raises this any more. It stays
+# declared because a shipped code is never deleted or reused (dev/standards/error-codes.md), and
+# it has no successor because the case it refused is now allowed.
+
+KEL_VERSION_REGRESSED = ErrorCode(
+    "e.rule.kel.version.regressed.f",
+    "A key event log returns to an older KERI protocol version after a newer one.",
+    detail="{aid}'s key event {said}, at sequence number {sn}, is protocol v{version}, and an "
+    "earlier event of the same log is already protocol v{prior}.",
+    args=("aid", "said", "sn", "version", "prior"),
+    hint="Once a key event log has an event in a newer protocol version, make every later event "
+    "in that version or a newer one. keripy chooses the version at each call and defaults to v2, "
+    "so pass the version explicitly when you rotate or interact.",
+)
+# Decision 8686h4tf, rule 2. Not a cryptographic need: each event is signed in its own
+# serialization. A KEL may move from v1 to v2 and never back, which catches the accidental
+# flip-flopping keripy's per-call version default makes easy.
+
+CREDENTIAL_REGISTRY_VERSION = ErrorCode(
+    "e.rule.credential.registry.version.f",
+    "A credential and the registry it names are different KERI protocol versions.",
+    detail="The protocol v{version} credential {credential} names the registry {regid}, which the "
+    "stream carries as protocol v{registry_version}.",
+    args=("credential", "version", "regid", "registry_version"),
+    hint="Issue a v1 credential from a v1 registry (vcp, iss) or a v2 credential from a v2 "
+    "registry (rip, bup).",
+)
+# Decision 8686h4tf, rule 4: a v1 credential names its registry with `ri` and a vcp/iss log, a v2
+# one with `rd` and a rip/bup registry. Every other combination of versions is allowed.
 
 REGISTRY_ANCHOR_UNCOMMITTED = ErrorCode(
     "e.self.anchor.registry.f",
