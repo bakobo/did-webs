@@ -1,7 +1,7 @@
 """didwebs.document — the DID document derived from verified state.
 
 Every assertion here is against the spec's own normative text (`## DID documents` and the
-sections under it, in ``~/code/wot/kswg-did-method-webs-specification/spec/body.md``), and the
+sections under it, in ``trustoverip/kswg-did-method-webs-specification spec/body.md``), and the
 last group reproduces the spec's `### Full Example` end to end as a golden fixture.
 
 Two kinds of input. Where a property is a projection of *key state* — verification methods,

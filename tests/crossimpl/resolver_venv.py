@@ -7,9 +7,9 @@ differences" #1), so the resolver is always driven as a subprocess in its own Py
 never imported in-process.
 
 **The pin.** ``GLEIF-IT/did-webs-resolver@0d4f2fd`` (design.md's ``gvimca``/``qbqfst`` decision
-input, the same commit the spike harness and ``~/code/wot/did-webs-resolver`` sit at). The local
-clone at that path is a READ-ONLY reference for reading source, never installed from -- this
-module always installs from the pinned GitHub ref over HTTPS, so provisioning works from a bare
+input, the same commit the spike harness sits at). A local clone of the resolver is a READ-ONLY
+reference for reading source, never installed from -- this module always installs from the
+pinned GitHub ref over HTTPS, so provisioning works from a bare
 checkout with no local clone present, exactly like ``keri``/``bakobo-errors`` in pyproject.toml.
 
 **Idempotent and cache-friendly** (design.md ``CI``; brief F's OPS forward form: "cache the

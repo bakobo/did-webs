@@ -1,7 +1,7 @@
 """didwebs.did — the WebsDid value type: parse/compose/validate did:webs identifiers.
 
 Fixtures below are taken verbatim from the did:webs spec (v0.10.3 clone,
-``~/code/wot/kswg-did-method-webs-specification/spec/body.md``):
+``trustoverip/kswg-did-method-webs-specification spec/body.md``):
 
 * ``### Method-Specific Identifier`` (~line 21) — the ABNF, and the RFC-governs-host note.
 * ``### Target System(s)`` (~line 93), including ``#### Sample did:webs URLs`` (~line 129) —
@@ -10,8 +10,7 @@ Fixtures below are taken verbatim from the did:webs spec (v0.10.3 clone,
   KERI event stream walkthrough: ``did:webs:did-webs-service%3a7702:EEOqE46OO...``.
 
 Strict TDD (ledger #20): this file is written and run red — ``didwebs.did`` does not exist yet —
-before ``src/didwebs/did.py`` is implemented. The red run is saved at
-``/home/daniel/code/bakobo/did-webs/.ignored/red-runs/B-did.txt``.
+before ``src/didwebs/did.py`` is implemented.
 """
 
 from __future__ import annotations

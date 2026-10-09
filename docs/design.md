@@ -7,7 +7,7 @@ goal `xckiyf`; decisions `jo5sby` (Python on keripy), `3woefn` (Ed25519-only v1)
 (publish-first), `avuwzl`+`embuup` (non-custodial ingestion; hosted artifacts derived, never
 passthrough), `gvimca`+`qbqfst` (estate keripy, protocol v1 pinned). Requirements background:
 [`scope.md`](scope.md). Spec citations are headings in
-`~/code/wot/kswg-did-method-webs-specification/spec/body.md`.
+`trustoverip/kswg-did-method-webs-specification spec/body.md`.
 
 ## Shape
 

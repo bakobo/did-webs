@@ -4,7 +4,7 @@
 # did-webs
 
 Publish [`did:webs`](https://github.com/trustoverip/kswg-did-method-webs-specification) DIDs
-for KERI-controlled AIDs on Bakobo infrastructure. A controller-produced CESR publication stream
+for KERI-controlled AIDs, from the host that serves them. A controller-produced CESR publication stream
 and the DID it claims to back go in; verified artifacts — `did.json` and `keri.cesr` — come out,
 derived from what [keripy](https://github.com/WebOfTrust/keripy) actually accepted, never from
 the submitted bytes.

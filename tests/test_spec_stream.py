@@ -1,6 +1,6 @@
 """The spec's own `keri.cesr`, fed through this pipeline — design oracle 4's second half.
 
-`#### The full KERI event stream` (``~/code/wot/kswg-did-method-webs-specification/spec/body.md``
+`#### The full KERI event stream` (``trustoverip/kswg-did-method-webs-specification spec/body.md``
 at line 3028) publishes a complete did:webs publication stream: an inception, two anchoring
 interaction events, a registry inception, a credential issuance, and the designated-aliases ACDC
 they authorize. It is the only stream in the specification whose *bytes* a conforming
