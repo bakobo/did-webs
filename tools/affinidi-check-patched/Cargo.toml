@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-affinidi-did-webs = { git = "ssh://git@github.com/bakobo/affinidi-tdk-rs.git", rev = "f9d07b4feaaa25fab4d74c435b89f83f5011e7b6" }
+affinidi-did-webs = "=0.7.0"
 serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Affinidi's two KERI crates, replaced by the public bakobo/affinidi-keri-rs fork at a commit on
+# its sedi-demo-patches branch: it parses v1 -I source seals and accepts a v1 rotation without c.
+# Both crates come from one revision, so their types stay identical.
+[patch.crates-io]
+affinidi-keri-core = { git = "https://github.com/bakobo/affinidi-keri-rs", rev = "1288096b1552713e552ca42a40fa6ce6d8fdadb6" }
+affinidi-keri-crypto = { git = "https://github.com/bakobo/affinidi-keri-rs", rev = "1288096b1552713e552ca42a40fa6ce6d8fdadb6" }
 
 [profile.dev]
 debug = 0
