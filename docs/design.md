@@ -1,13 +1,12 @@
 # didwebs phase-1 design
 
-Status: rev 2 (2026-08-14) — revised against the KERI panel run
-[`../reviews/keri-review-panel-phase1-design.md`](../reviews/keri-review-panel-phase1-design.md)
+Status: rev 2 (2026-08-14) — revised against a KERI review panel run
 (15 findings, all dispositioned; per-finding trace at the end). Governing intent: `this.i` —
 goal `xckiyf`; decisions `jo5sby` (Python on keripy), `3woefn` (Ed25519-only v1), `ecwpad`
 (publish-first), `avuwzl`+`embuup` (non-custodial ingestion; hosted artifacts derived, never
 passthrough), `gvimca`+`qbqfst` (estate keripy, protocol v1 pinned). Requirements background:
 [`scope.md`](scope.md). Spec citations are headings in
-`~/code/wot/kswg-did-method-webs-specification/spec/body.md`.
+`trustoverip/kswg-did-method-webs-specification spec/body.md`.
 
 ## Shape
 

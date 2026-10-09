@@ -7,7 +7,7 @@ endpoint state and the designated-aliases credential onto the document the spec'
 ``## DID documents`` section defines. :func:`to_did_web` then produces the hosted form.
 
 **Spec-section mapping.** Every block below names the heading it implements, in
-``~/code/wot/kswg-did-method-webs-specification/spec/body.md``, so a spec-drift audit can be
+``trustoverip/kswg-did-method-webs-specification spec/body.md``, so a spec-drift audit can be
 done section by section rather than by reading the whole module:
 
 ======================================  =========================================

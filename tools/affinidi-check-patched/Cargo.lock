@@ -58,7 +58,8 @@ dependencies = [
 [[package]]
 name = "affinidi-did-webs"
 version = "0.7.0"
-source = "git+ssh://git@github.com/bakobo/affinidi-tdk-rs.git?rev=f9d07b4feaaa25fab4d74c435b89f83f5011e7b6#f9d07b4feaaa25fab4d74c435b89f83f5011e7b6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cf94011dcc32d006b2c2fa1ac823e10b31f61054d1c98e40a1c84d5c88616ae"
 dependencies = [
  "affinidi-cesr",
  "affinidi-crypto",
@@ -87,7 +88,7 @@ dependencies = [
 [[package]]
 name = "affinidi-keri-core"
 version = "0.4.0"
-source = "git+ssh://git@github.com/bakobo/affinidi-keri-rs.git?rev=1288096b1552713e552ca42a40fa6ce6d8fdadb6#1288096b1552713e552ca42a40fa6ce6d8fdadb6"
+source = "git+https://github.com/bakobo/affinidi-keri-rs?rev=1288096b1552713e552ca42a40fa6ce6d8fdadb6#1288096b1552713e552ca42a40fa6ce6d8fdadb6"
 dependencies = [
  "affinidi-cesr",
  "affinidi-keri-crypto",
@@ -104,7 +105,7 @@ dependencies = [
 [[package]]
 name = "affinidi-keri-crypto"
 version = "0.4.0"
-source = "git+ssh://git@github.com/bakobo/affinidi-keri-rs.git?rev=1288096b1552713e552ca42a40fa6ce6d8fdadb6#1288096b1552713e552ca42a40fa6ce6d8fdadb6"
+source = "git+https://github.com/bakobo/affinidi-keri-rs?rev=1288096b1552713e552ca42a40fa6ce6d8fdadb6#1288096b1552713e552ca42a40fa6ce6d8fdadb6"
 dependencies = [
  "affinidi-cesr",
  "argon2",

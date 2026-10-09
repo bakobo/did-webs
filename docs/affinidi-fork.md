@@ -1,13 +1,14 @@
 # Patched Affinidi stage checker
 
-The stage checker uses two private, standalone Bakobo copies of Affinidi's Rust
-repositories. They retain `upstream` remotes. The did:webs crate is pinned to
-`bakobo/affinidi-tdk-rs` commit `f9d07b4feaaa25fab4d74c435b89f83f5011e7b6`;
-that commit changes only its KERI dependencies, both pinned to
-`bakobo/affinidi-keri-rs` commit `1288096b1552713e552ca42a40fa6ce6d8fdadb6`.
+The stage checker builds Affinidi's published `affinidi-did-webs` 0.7.0 crate
+against a patched copy of its two KERI crates. Cargo's `[patch.crates-io]`
+replaces `affinidi-keri-core` and `affinidi-keri-crypto` with the public
+[`bakobo/affinidi-keri-rs`](https://github.com/bakobo/affinidi-keri-rs) fork at
+commit `1288096b1552713e552ca42a40fa6ce6d8fdadb6`, on its `sedi-demo-patches`
+branch. Both crates come from that one revision, so their types stay identical.
 The original 0.7.0 checker remains at [`tools/affinidi-check`](../tools/affinidi-check/README.md),
 and the alternate is at [`tools/affinidi-check-patched`](../tools/affinidi-check-patched/README.md).
-The private Git dependencies require Bakobo read access on a cold build.
+Every dependency resolves anonymously from crates.io or public GitHub.
 
 **Source seal (`-I`).** KERI v1 carries the designated-aliases ACDC's TEL source
 seal in an `-I` attachment. The method specification permits an ACDC anchored

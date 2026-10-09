@@ -846,14 +846,16 @@ Production did:webs implementation on KERI = goal:
       why: >
         The published Affinidi 0.7.0 resolver refuses our witnessed KERI v1 artifacts at the
         designated-aliases ACDC's -I source seal and Guy's normal rotation without a c field.
-        Daniel chose a stage fallback that patches those two interpretation gaps in private
-        Bakobo copies of Affinidi's KERI and did:webs repositories. The stage check pins exact
-        Git revisions, discloses each patch, and keeps a separate check against the published
-        0.7.0 crate so the intervention remains visible rather than being mistaken for an
-        upstream interoperability pass. The private copies are independent repositories with
-        upstream remotes because GitHub cannot make a private fork of a public repository.
-        Accepted tradeoff: a private Git dependency needs Bakobo credentials on a cold start,
-        and the patched check demonstrates only the behaviors its falsifiers exercise. It does
+        Daniel chose a stage fallback that patches those two interpretation gaps in Affinidi's
+        KERI crates. The stage check builds the published affinidi-did-webs 0.7.0 crate and
+        replaces only affinidi-keri-core and affinidi-keri-crypto, via [patch.crates-io], with
+        one exact revision of the public bakobo/affinidi-keri-rs fork. It discloses each patch
+        and keeps a separate check against the unpatched 0.7.0 crate, so the intervention
+        remains visible rather than being mistaken for an upstream interoperability pass. The
+        check originally pinned private copies of both repositories; the did:webs copy changed
+        nothing but its KERI dependency pins, so a crates.io patch reproduces it exactly and
+        every dependency now resolves without credentials. Accepted tradeoff: the patched check
+        demonstrates only the behaviors its falsifiers exercise. It does
         not close the upstream parser issue or establish that every part of the did:webs method
         is enforced by an unmodified independent resolver.
 

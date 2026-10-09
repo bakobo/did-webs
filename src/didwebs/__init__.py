@@ -1,4 +1,4 @@
-"""didwebs — publish did:webs DIDs for KERI-controlled AIDs on Bakobo infrastructure.
+"""didwebs — publish did:webs DIDs for KERI-controlled AIDs on the serving host.
 
 Ingests a controller-produced CESR publication stream, verifies it against the AID's key state
 via keripy, and derives a hosted did:webs document from what keripy actually accepted — never

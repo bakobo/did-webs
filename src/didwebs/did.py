@@ -3,7 +3,7 @@
 Parses, composes, and validates ``did:webs`` identifiers per the method-specific-identifier
 ABNF (``### Method-Specific Identifier``) and derives the two hosting URLs
 (``### Target System(s)``) in the did:webs spec (v0.10.3 clone,
-``~/code/wot/kswg-did-method-webs-specification/spec/body.md``).
+``trustoverip/kswg-did-method-webs-specification spec/body.md``).
 
 Pure value type: no I/O, no keripy state, no network. The only keripy import is
 :data:`keri.core.coring.NonTransDex`, the derivation-code table used by

@@ -1,14 +1,14 @@
 # Patched Affinidi artifact check
 
-This alternate uses the same local artifact checker as `../affinidi-check` with
-the pinned private Bakobo Affinidi copies described in
-[`docs/affinidi-fork.md`](../../docs/affinidi-fork.md). A cold build requires
-Bakobo read access to both private Git repositories and Cargo's Git CLI mode.
+This alternate uses the same local artifact checker as `../affinidi-check`,
+with Affinidi's KERI crates patched from the public fork described in
+[`docs/affinidi-fork.md`](../../docs/affinidi-fork.md). A cold build needs no
+credentials.
 
 From the repository root, run the saved M7 pair after Guy's rotation:
 
 ```sh
-CARGO_NET_GIT_FETCH_WITH_CLI=true cargo run --locked \
+cargo run --locked \
   --manifest-path tools/affinidi-check-patched/Cargo.toml -- \
   'did:webs:dids.bakobo.com:demo:ELEGG02va7qWpBiTCQfTXFwbNTk-FVWJr7nWJX2DhHy7' \
   tools/affinidi-check-patched/tests/fixtures/guy-rotated/keri.cesr \
@@ -18,7 +18,7 @@ CARGO_NET_GIT_FETCH_WITH_CLI=true cargo run --locked \
 Run both saved DIDs and the two tampering checks with:
 
 ```sh
-CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --locked \
+cargo test --locked \
   --manifest-path tools/affinidi-check-patched/Cargo.toml
 ```
 

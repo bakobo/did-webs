@@ -12,15 +12,14 @@ what order.
 ## Sources
 
 - Spec: [trustoverip/kswg-did-method-webs-specification](https://github.com/trustoverip/kswg-did-method-webs-specification),
-  v0.10.3, read at commit `2d84ef2` (2026-08-11). Local clone:
-  `~/code/wot/kswg-did-method-webs-specification`. All section citations below are headings in
-  `spec/body.md`.
+  v0.10.3, read at commit `2d84ef2` (2026-08-11). All section
+  citations below are headings in `spec/body.md`.
 - Reference implementation: [GLEIF-IT/did-webs-resolver](https://github.com/GLEIF-IT/did-webs-resolver)
   v0.3.7 (Python package `dws`, formerly `dkr`; keripy pinned 1.2.13; Apache-2.0), read at HEAD
-  2026-08-11. Local clone: `~/code/wot/did-webs-resolver`. Supersedes the archived
+  2026-08-11. Supersedes the archived
   hyperledger-labs repo of the same name.
 - Helper library: [GLEIF-IT/did-webs-ts](https://github.com/GLEIF-IT/did-webs-ts) v0.0.6
-  (TypeScript, no KERI verification at all). Local clone: `~/code/wot/did-webs-ts`.
+  (TypeScript, no KERI verification at all).
 - Talk: Jonathan Rayback (task force co-chair), "KERI Bridge to the DID World", KERI Conference
   April 2026 — transcript at
   <https://keri.foundation/confs/2026/videos/#keri-bridge-to-the-did-world-jonathan-rayback>.
