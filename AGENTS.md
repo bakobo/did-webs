@@ -11,7 +11,7 @@ work: `git clone --depth 1 https://github.com/bakobo/dev`. Always on:
   `nid:` — 8 digit-first bech32 characters minted by `i id` or `i add` and never typed or generated
   any other way; a legacy `id:` (base32, hand-made, older) is grandfathered and never rewritten.
 - **Fail closed.** Untrusted input never carries authority; when something can't be checked, the
-  effect does not land (Bakobo principle 8).
+  effect does not land.
 - **High-quality errors.** Every error carries a stable symbolic code, says whether retrying could
   help (permanent vs. transient), and reads as complete, plain sentences in the house voice — never
   "something went wrong." Full standard: [`dev/standards/error-handling.md`](../dev/standards/error-handling.md).

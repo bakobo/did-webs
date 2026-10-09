@@ -1,6 +1,6 @@
 # didwebs phase-1 design
 
-Status: rev 2 (2026-08-14) — revised against a KERI review panel run, kept in a private review archive
+Status: rev 2 (2026-08-14) — revised against a KERI review panel run
 (15 findings, all dispositioned; per-finding trace at the end). Governing intent: `this.i` —
 goal `xckiyf`; decisions `jo5sby` (Python on keripy), `3woefn` (Ed25519-only v1), `ecwpad`
 (publish-first), `avuwzl`+`embuup` (non-custodial ingestion; hosted artifacts derived, never
